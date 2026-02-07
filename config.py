@@ -143,7 +143,7 @@ MESSAGES = {
         "force_drop": "Chip drop triggered.",
     },
     "word_game": {
-        "started": "🎮 Word game started! Use `/addword` to add words one at a time.",
+        "started": "🎮 Word game started! Just type a word to add it to the story.",
         "ended": "📖 {user} ended the story! ({count} words total).",
         "word_added": "✓ Added \"{word}\".",
         "already_active": "A word game is already in progress! Use `/wordgame end` to finish it first.",
@@ -161,8 +161,8 @@ WORD_GAME = {
     "embed": {
         "title": "📖 Word Game",
         "title_ended": "📖 Story Complete!",
-        "empty_story": "*Start the story by adding a word!*",
-        "footer": "Type \"END\" to finish the story",
+        "empty_story": "*Start the story by typing a word!*",
+        "footer": "Type a word to add • Type END to finish",
         "footer_ended": "words total",
         "last_word_by": "Last word by",
         "color": "9B59B6",

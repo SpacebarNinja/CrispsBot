@@ -793,9 +793,8 @@ async def viewschedule_cmd(interaction: discord.Interaction):
             ot = datetime.fromisoformat(override)
             if ot.tzinfo is None:
                 ot = ot.replace(tzinfo=timezone.utc)
-            diff = max(0, (ot - datetime.now(timezone.utc)).total_seconds())
-            h, m = divmod(int(diff / 60), 60)
-            lines.append(f"⏰ **{name}** in {h}h {m}m" if h > 0 else f"⏰ **{name}** in {m}m")
+            ts = int(ot.timestamp())
+            lines.append(f"⏰ **{name}** <t:{ts}:R>")
         else:
             custom = await db.get_state(gid, f"schedule_{feature}")
             if custom:
@@ -806,10 +805,9 @@ async def viewschedule_cmd(interaction: discord.Interaction):
             next_time = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
             if next_time <= now:
                 next_time += timedelta(days=1)
-            diff = next_time - now
-            h = int(diff.total_seconds() // 3600)
-            m = int((diff.total_seconds() % 3600) // 60)
-            lines.append(f"⏰ **{name}** in {h}h {m}m")
+            # Convert to UTC timestamp for Discord
+            ts = int(next_time.astimezone(timezone.utc).timestamp())
+            lines.append(f"⏰ **{name}** <t:{ts}:R>")
 
     # Chatter rewards
     sched = config.SCHEDULE.get("chatter_reward", {})
@@ -817,10 +815,8 @@ async def viewschedule_cmd(interaction: discord.Interaction):
     next_chatter = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
     if next_chatter <= now:
         next_chatter += timedelta(days=1)
-    diff = next_chatter - now
-    h = int(diff.total_seconds() // 3600)
-    m = int((diff.total_seconds() % 3600) // 60)
-    lines.append(f"⏰ **Chatter Rewards** in {h}h {m}m")
+    ts = int(next_chatter.astimezone(timezone.utc).timestamp())
+    lines.append(f"⏰ **Chatter Rewards** <t:{ts}:R>")
 
     lines.append(f"💜 **Code Purple Check** every hour")
     lines.append(f"🥔 **Chip Drops** every {config.CHIP_DROP['min_interval']}-{config.CHIP_DROP['max_interval']}m")
@@ -920,6 +916,62 @@ async def on_message(message: discord.Message):
     # Track activity for code purple & chatter rewards
     await db.set_state(gid, "last_message_time", datetime.now(timezone.utc).isoformat())
     await db.increment_chatter(gid, str(message.author.id), message.author.display_name)
+
+    # Word game - check if message is in active word game channel
+    game = await db.get_word_game(gid)
+    if game and game["active"] and str(message.channel.id) == game["channel_id"]:
+        word = message.content.strip()
+
+        # Validate - single word only
+        if " " in word or not re.match(r"^[\w''.,!?;:\-]+$", word):
+            # Not a valid word, just ignore (don't spam errors for normal chat)
+            pass
+        elif game["last_contributor_id"] == str(message.author.id):
+            # Same person can't go twice
+            try:
+                await message.delete()
+                warn = await message.channel.send(
+                    f"{message.author.mention} You can't add two words in a row! Let someone else go.",
+                    delete_after=3,
+                )
+            except Exception:
+                pass
+        elif word.upper() == "END":
+            # End the game
+            await db.end_word_game(gid)
+            game = await db.get_word_game(gid)
+            try:
+                await message.delete()
+                old_msg = await message.channel.fetch_message(int(game["message_id"]))
+                await old_msg.delete()
+            except Exception:
+                pass
+            embed = build_word_game_embed(game["words"], game["word_count"], False)
+            end_msg = f"📖 {message.author.mention} ended the story! ({game['word_count']} words total)."
+            await message.channel.send(content=end_msg, embed=embed)
+        else:
+            # Valid word - add it
+            await db.add_word(gid, word, str(message.author.id))
+            game = await db.get_word_game(gid)
+
+            # Delete user's message
+            try:
+                await message.delete()
+            except Exception:
+                pass
+
+            # Delete old bot message and send new one
+            try:
+                old_msg = await message.channel.fetch_message(int(game["message_id"]))
+                await old_msg.delete()
+            except Exception:
+                pass
+
+            embed = build_word_game_embed(game["words"], game["word_count"], True, message.author)
+            new_msg = await message.channel.send(embed=embed)
+            # Update stored message ID
+            await db.update_word_game_message(gid, str(new_msg.id))
+
     await bot.process_commands(message)
 
 

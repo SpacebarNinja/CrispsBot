@@ -313,3 +313,13 @@ async def end_word_game(guild_id: str):
             (guild_id,)
         )
         await conn.commit()
+
+
+async def update_word_game_message(guild_id: str, message_id: str):
+    """Update the tracked message ID for the word game embed."""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE word_games SET message_id = ? WHERE guild_id = ? AND active = 1",
+            (message_id, guild_id)
+        )
+        await conn.commit()
