@@ -869,7 +869,7 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.0)")
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.1)")
 
 
 @bot.event
