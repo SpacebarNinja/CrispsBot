@@ -22,8 +22,6 @@ import db
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = int(os.getenv("GUILD_ID", "0"))
-MY_GUILD = discord.Object(id=GUILD_ID)
 MANILA_TZ = ZoneInfo(config.TIMEZONE)
 
 intents = discord.Intents.default()
@@ -141,8 +139,7 @@ async def post_personality(guild_id: str):
     await db.set_state(guild_id, "last_personality_post", datetime.now(timezone.utc).isoformat())
 
 
-async def do_chip_drop():
-    guild_id = str(GUILD_ID)
+async def do_chip_drop(guild_id: str):
     channel_id = await db.get_channel(guild_id, "chipdrop")
     if not channel_id:
         return
@@ -341,20 +338,22 @@ async def _check_chatter(gid: str, now: datetime):
 async def schedule_loop():
     """Main schedule loop — checks all features every minute."""
     now = datetime.now(MANILA_TZ)
-    gid = str(GUILD_ID)
 
-    for feature, post_fn in [
-        ("typology", post_typology),
-        ("spark", post_spark),
-        ("personality", post_personality),
-    ]:
-        await _check_feature(gid, now, feature, post_fn)
+    for guild in bot.guilds:
+        gid = str(guild.id)
 
-    await _check_chatter(gid, now)
+        for feature, post_fn in [
+            ("typology", post_typology),
+            ("spark", post_spark),
+            ("personality", post_personality),
+        ]:
+            await _check_feature(gid, now, feature, post_fn)
 
-    # Code purple check at the top of every hour
-    if now.minute == 0:
-        await check_code_purple(gid)
+        await _check_chatter(gid, now)
+
+        # Code purple check at the top of every hour
+        if now.minute == 0:
+            await check_code_purple(gid)
 
 
 @schedule_loop.before_loop
@@ -365,7 +364,6 @@ async def before_schedule():
 async def chip_drop_cycle():
     """Background loop — drops chips at random intervals."""
     await bot.wait_until_ready()
-    gid = str(GUILD_ID)
     while not bot.is_closed():
         delay = random.randint(
             config.CHIP_DROP["min_interval"] * 60,
@@ -373,10 +371,12 @@ async def chip_drop_cycle():
         )
         await asyncio.sleep(delay)
         if config.FEATURES.get("chip_drops"):
-            try:
-                await do_chip_drop()
-            except Exception as e:
-                print(f"Chip drop error: {e}")
+            for guild in bot.guilds:
+                gid = str(guild.id)
+                try:
+                    await do_chip_drop(gid)
+                except Exception as e:
+                    print(f"Chip drop error in {guild.name}: {e}")
 
 
 # ======================== CHIP DROP VIEW ========================
@@ -454,7 +454,7 @@ def build_word_game_embed(words: str, word_count: int, active: bool, last_user=N
 # ---------- Public ----------
 
 
-@bot.tree.command(name="balance", description="Check your chip balance 🥔", guild=MY_GUILD)
+@bot.tree.command(name="balance", description="Check your chip balance 🥔")
 async def balance_cmd(interaction: discord.Interaction):
     gid, uid = str(interaction.guild_id), str(interaction.user.id)
     bal = await db.get_balance(gid, uid)
@@ -470,7 +470,7 @@ async def balance_cmd(interaction: discord.Interaction):
         await interaction.response.send_message(msg, ephemeral=True)
 
 
-@bot.tree.command(name="chipleaderboard", description="View the server chip leaderboard 🏆", guild=MY_GUILD)
+@bot.tree.command(name="chipleaderboard", description="View the server chip leaderboard 🏆")
 async def leaderboard_cmd(interaction: discord.Interaction):
     gid, uid = str(interaction.guild_id), str(interaction.user.id)
     entries = await db.get_leaderboard(gid, config.LEADERBOARD["page_size"])
@@ -517,7 +517,7 @@ async def leaderboard_cmd(interaction: discord.Interaction):
 # ---------- Word Game ----------
 
 
-@bot.tree.command(name="wordgame", description="Start, end, or view the word game", guild=MY_GUILD)
+@bot.tree.command(name="wordgame", description="Start, end, or view the word game")
 @app_commands.describe(action="What to do")
 @app_commands.choices(
     action=[
@@ -569,7 +569,7 @@ async def wordgame_cmd(interaction: discord.Interaction, action: app_commands.Ch
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="addword", description="Add a word to the collaborative story", guild=MY_GUILD)
+@bot.tree.command(name="addword", description="Add a word to the collaborative story")
 @app_commands.describe(word="A single word to add (or 'END' to finish)")
 async def addword_cmd(interaction: discord.Interaction, word: str):
     gid = str(interaction.guild_id)
@@ -632,7 +632,7 @@ async def addword_cmd(interaction: discord.Interaction, word: str):
 # ---------- Admin ----------
 
 
-@bot.tree.command(name="chips", description="Set a user's chip balance (admin only)", guild=MY_GUILD)
+@bot.tree.command(name="chips", description="Set a user's chip balance (admin only)")
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(user="The user", amount="The amount to set")
 async def chips_cmd(interaction: discord.Interaction, user: discord.Member, amount: int):
@@ -643,14 +643,14 @@ async def chips_cmd(interaction: discord.Interaction, user: discord.Member, amou
     )
 
 
-@bot.tree.command(name="forcedrop", description="Force a chip drop (admin only)", guild=MY_GUILD)
+@bot.tree.command(name="forcedrop", description="Force a chip drop (admin only)")
 @app_commands.default_permissions(administrator=True)
 async def forcedrop_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(config.MESSAGES["success"]["force_drop"], ephemeral=True)
-    await do_chip_drop()
+    await do_chip_drop(str(interaction.guild_id))
 
 
-@bot.tree.command(name="forcequestion", description="Force post a daily question (admin only)", guild=MY_GUILD)
+@bot.tree.command(name="forcequestion", description="Force post a daily question (admin only)")
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(type="Type of question to post")
 @app_commands.choices(
@@ -672,7 +672,7 @@ async def forcequestion_cmd(interaction: discord.Interaction, type: app_commands
         await interaction.response.send_message(config.MESSAGES["errors"]["generic"], ephemeral=True)
 
 
-@bot.tree.command(name="codepurple", description="Force a Code Purple message (admin only)", guild=MY_GUILD)
+@bot.tree.command(name="codepurple", description="Force a Code Purple message (admin only)")
 @app_commands.default_permissions(administrator=True)
 async def codepurple_cmd(interaction: discord.Interaction):
     gid = str(interaction.guild_id)
@@ -689,7 +689,7 @@ async def codepurple_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(f"Code purple posted to <#{channel_id}>", ephemeral=True)
 
 
-@bot.tree.command(name="stats", description="View bot statistics (admin only)", guild=MY_GUILD)
+@bot.tree.command(name="stats", description="View bot statistics (admin only)")
 @app_commands.default_permissions(administrator=True)
 async def stats_cmd(interaction: discord.Interaction):
     gid = str(interaction.guild_id)
@@ -730,7 +730,7 @@ async def stats_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="setchannel", description="Set a channel for bot features (admin only)", guild=MY_GUILD)
+@bot.tree.command(name="setchannel", description="Set a channel for bot features (admin only)")
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(feature="Feature to configure", channel="Channel (defaults to current)")
 @app_commands.choices(
@@ -754,7 +754,7 @@ async def setchannel_cmd(
     await interaction.response.send_message(f"{feature.name} channel set to {target.mention}", ephemeral=True)
 
 
-@bot.tree.command(name="viewchannels", description="View current channel settings (admin only)", guild=MY_GUILD)
+@bot.tree.command(name="viewchannels", description="View current channel settings (admin only)")
 @app_commands.default_permissions(administrator=True)
 async def viewchannels_cmd(interaction: discord.Interaction):
     gid = str(interaction.guild_id)
@@ -779,7 +779,7 @@ async def viewchannels_cmd(interaction: discord.Interaction):
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
 
-@bot.tree.command(name="viewschedule", description="View upcoming scheduled posts (admin only)", guild=MY_GUILD)
+@bot.tree.command(name="viewschedule", description="View upcoming scheduled posts (admin only)")
 @app_commands.default_permissions(administrator=True)
 async def viewschedule_cmd(interaction: discord.Interaction):
     gid = str(interaction.guild_id)
@@ -830,7 +830,7 @@ async def viewschedule_cmd(interaction: discord.Interaction):
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
 
-@bot.tree.command(name="resettimer", description="Reset timer for scheduled features (admin only)", guild=MY_GUILD)
+@bot.tree.command(name="resettimer", description="Reset timer for scheduled features (admin only)")
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(feature="Feature to reset")
 @app_commands.choices(
@@ -871,7 +871,7 @@ async def resettimer_cmd(interaction: discord.Interaction, feature: app_commands
     )
 
 
-@bot.tree.command(name="setschedule", description="Set the time for scheduled posts (admin only)", guild=MY_GUILD)
+@bot.tree.command(name="setschedule", description="Set the time for scheduled posts (admin only)")
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(feature="Feature to schedule", hour="Hour (0-23, Manila time)", minute="Minute (0-59)")
 @app_commands.choices(
@@ -908,8 +908,8 @@ async def on_ready():
         await db.init()
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
-        synced = await bot.tree.sync(guild=MY_GUILD)
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands.")
+        synced = await bot.tree.sync()
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally.")
 
 
 @bot.event
