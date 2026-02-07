@@ -1,0 +1,29 @@
+# Environment
+.env
+.dev.vars
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Database
+*.db
+bot_data.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Old Node/TS files (can delete these)
+node_modules/
+dist/
+.wrangler/
+*.tsbuildinfo
