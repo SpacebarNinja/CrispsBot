@@ -569,66 +569,6 @@ async def wordgame_cmd(interaction: discord.Interaction, action: app_commands.Ch
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="addword", description="Add a word to the collaborative story")
-@app_commands.describe(word="A single word to add (or 'END' to finish)")
-async def addword_cmd(interaction: discord.Interaction, word: str):
-    gid = str(interaction.guild_id)
-    game = await db.get_word_game(gid)
-
-    if not game or not game["active"]:
-        await interaction.response.send_message(config.MESSAGES["word_game"]["no_game"], ephemeral=True)
-        return
-
-    if str(interaction.channel_id) != game["channel_id"]:
-        await interaction.response.send_message(
-            config.MESSAGES["word_game"]["wrong_channel"].format(channel=game["channel_id"]),
-            ephemeral=True,
-        )
-        return
-
-    # END command
-    if word.upper() == "END":
-        await db.end_word_game(gid)
-        game = await db.get_word_game(gid)
-        try:
-            ch = bot.get_channel(int(game["channel_id"]))
-            m = await ch.fetch_message(int(game["message_id"]))
-            await m.edit(embed=build_word_game_embed(game["words"], game["word_count"], False))
-        except Exception:
-            pass
-        reply = config.MESSAGES["word_game"]["ended"].format(user=interaction.user.mention, count=game["word_count"])
-        await interaction.response.send_message(reply)
-        return
-
-    # Validate — single word only
-    if " " in word or not re.match(r"^[\w''.,!?;:\-]+$", word):
-        snarky = random.random() < config.WORD_GAME["snarky_chance"]
-        msg = config.MESSAGES["word_game"]["not_a_word_snarky"] if snarky else config.MESSAGES["word_game"]["not_a_word"]
-        await interaction.response.send_message(msg, ephemeral=True)
-        return
-
-    # No consecutive posts
-    if game["last_contributor_id"] == str(interaction.user.id):
-        await interaction.response.send_message(config.MESSAGES["word_game"]["consecutive"], ephemeral=True)
-        return
-
-    # Add word
-    await db.add_word(gid, word, str(interaction.user.id))
-    game = await db.get_word_game(gid)
-
-    # Update the pinned embed
-    try:
-        ch = bot.get_channel(int(game["channel_id"]))
-        m = await ch.fetch_message(int(game["message_id"]))
-        await m.edit(embed=build_word_game_embed(game["words"], game["word_count"], True, interaction.user))
-    except Exception:
-        pass
-
-    await interaction.response.send_message(
-        config.MESSAGES["word_game"]["word_added"].format(word=word), ephemeral=True
-    )
-
-
 # ---------- Admin ----------
 
 
