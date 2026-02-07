@@ -862,21 +862,8 @@ async def on_message(message: discord.Message):
     if game and game["active"] and str(message.channel.id) == game["channel_id"]:
         word = message.content.strip()
 
-        # Validate - single word only
-        if " " in word or not re.match(r"^[\w''.,!?;:\-]+$", word):
-            # Not a valid word, just ignore (don't spam errors for normal chat)
-            pass
-        elif game["last_contributor_id"] == str(message.author.id):
-            # Same person can't go twice
-            try:
-                await message.delete()
-                warn = await message.channel.send(
-                    f"{message.author.mention} You can't add two words in a row! Let someone else go.",
-                    delete_after=3,
-                )
-            except Exception:
-                pass
-        elif word.upper() == "END":
+        # Check for END command first (anyone can end the game)
+        if word.upper() == "END":
             # End the game
             await db.end_word_game(gid)
             game = await db.get_word_game(gid)
@@ -889,6 +876,20 @@ async def on_message(message: discord.Message):
             embed = build_word_game_embed(game["words"], game["word_count"], False)
             end_msg = f"📖 {message.author.mention} ended the story! ({game['word_count']} words total)."
             await message.channel.send(content=end_msg, embed=embed)
+        # Validate - single word only
+        elif " " in word or not re.match(r"^[\w''.,!?;:\-]+$", word):
+            # Not a valid word, just ignore (don't spam errors for normal chat)
+            pass
+        elif game["last_contributor_id"] == str(message.author.id):
+            # Same person can't go twice
+            try:
+                await message.delete()
+                warn = await message.channel.send(
+                    f"{message.author.mention} You can't add two words in a row! Let someone else go.",
+                    delete_after=3,
+                )
+            except Exception:
+                pass
         else:
             # Valid word - add it
             await db.add_word(gid, word, str(message.author.id))
