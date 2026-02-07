@@ -7,13 +7,8 @@ Edit this file to customize the bot's behavior and content.
 
 TIMEZONE = "Asia/Manila"
 
-# Schedule times are in Manila time (UTC+8)
-SCHEDULE = {
-    "typology": {"hour": 9, "minute": 0, "enabled": True},
-    "spark": {"hour": 15, "minute": 0, "enabled": True},
-    "personality": {"hour": 12, "minute": 0, "enabled": True},
-    "chatter_reward": {"hour": 23, "minute": 59, "enabled": True},
-}
+# Chatter reward time (Manila time). Daily questions use auto-rotation (24h / question count).
+CHATTER_SCHEDULE = {"hour": 23, "minute": 59}
 
 CHIPS = {
     "name": "chips",
@@ -40,7 +35,7 @@ CODE_PURPLE = {
 
 FEATURES = {
     "typology": True,
-    "spark": True,
+    "casual": True,
     "personality": True,
     "chatter_rewards": True,
     "chip_drops": True,
@@ -58,7 +53,7 @@ AUTHOR_NAME = "CRISPS GC ✶⋆.˚🥔"
 # Colors as hex WITHOUT the # prefix (used with int(x, 16))
 COLORS = {
     "typology": "FFD700",
-    "spark": "FF69B4",
+    "casual": "FF69B4",
     "personality": "9B59B6",
     "leaderboard": "FF8C00",
 }
@@ -68,8 +63,8 @@ EMBEDS = {
         "title": "✨ Daily Typology Question",
         "footer": "Drop your thoughts below 💭",
     },
-    "spark": {
-        "title": "💫 Daily Casual Question",
+    "casual": {
+        "title": "💬 Casual Question Daily",
         "footer": "Drop your thoughts below 💭",
     },
     "personality": {
@@ -161,13 +156,12 @@ WORD_GAME = {
     "embed": {
         "title": "📖 Word Game",
         "title_ended": "📖 Story Complete!",
-        "empty_story": "*Start the story by typing a word!*",
-        "footer": "Type a word to add • Type END to finish",
+        "empty_story": "*Type a word to start the story!*",
+        "footer": "One word per message • Punctuation auto-formats",
         "footer_ended": "words total",
         "last_word_by": "Last word by",
         "color": "9B59B6",
     },
-    "snarky_chance": 0.2,
 }
 
 # ==================== TYPOLOGY ====================

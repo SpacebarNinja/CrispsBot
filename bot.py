@@ -30,6 +30,10 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Daily question rotation: typology → casual → personality → ...
+DAILY_QUESTION_ORDER = ["typology", "casual", "personality"]
+QUESTION_GAP_HOURS = 24 / len(DAILY_QUESTION_ORDER)  # 8 hours
+
 
 # ======================== HELPERS ========================
 
@@ -60,6 +64,34 @@ def _embed(title: str, description: str, color_key: str, footer: str, author: bo
     return e
 
 
+def format_story(words_str: str) -> str:
+    """Format raw word tokens into a clean story string.
+    - Punctuation attaches to previous word (no space before)
+    - Auto-lowercase everything
+    - Capitalize first character
+    """
+    if not words_str:
+        return ""
+    tokens = words_str.split()
+    if not tokens:
+        return ""
+
+    PUNCT = set(".,!?;:-…'\"")
+    result = []
+
+    for token in tokens:
+        is_punct = all(c in PUNCT for c in token)
+        if is_punct and result:
+            result[-1] += token  # Attach to previous word
+        else:
+            result.append(token.lower())
+
+    story = " ".join(result)
+    if story:
+        story = story[0].upper() + story[1:]
+    return story
+
+
 # ======================== POSTING FUNCTIONS ========================
 
 
@@ -83,12 +115,15 @@ async def post_typology(guild_id: str):
         "typology",
         config.EMBEDS["typology"]["footer"],
     )
-    await channel.send(embed=embed)
-    await db.set_state(guild_id, "last_typology_post", datetime.now(timezone.utc).isoformat())
+
+    # Ping daily question role
+    ping_role_id = await db.get_state(guild_id, "ping_role")
+    content = f"<@&{ping_role_id}>" if ping_role_id else None
+    await channel.send(content=content, embed=embed)
 
 
-async def post_spark(guild_id: str):
-    channel_id = await db.get_channel(guild_id, "spark")
+async def post_casual(guild_id: str):
+    channel_id = await db.get_channel(guild_id, "casual")
     if not channel_id:
         return
     channel = bot.get_channel(int(channel_id))
@@ -101,23 +136,25 @@ async def post_spark(guild_id: str):
         + [(q, "Chill Vibes") for q in config.SPARK_CHILL]
     )
 
-    used = await db.get_used_questions(guild_id, "spark")
+    used = await db.get_used_questions(guild_id, "casual")
     if len(used) >= len(all_q):
-        await db.reset_questions(guild_id, "spark")
+        await db.reset_questions(guild_id, "casual")
         used = []
     available = [i for i in range(len(all_q)) if i not in used]
     idx = random.choice(available)
-    await db.mark_question_used(guild_id, "spark", idx)
+    await db.mark_question_used(guild_id, "casual", idx)
     question, category = all_q[idx]
 
     embed = _embed(
-        config.EMBEDS["spark"]["title"],
+        config.EMBEDS["casual"]["title"],
         f"*{category}*\n\n{question}",
-        "spark",
-        config.EMBEDS["spark"]["footer"],
+        "casual",
+        config.EMBEDS["casual"]["footer"],
     )
-    await channel.send(embed=embed)
-    await db.set_state(guild_id, "last_spark_post", datetime.now(timezone.utc).isoformat())
+
+    ping_role_id = await db.get_state(guild_id, "ping_role")
+    content = f"<@&{ping_role_id}>" if ping_role_id else None
+    await channel.send(content=content, embed=embed)
 
 
 async def post_personality(guild_id: str):
@@ -135,8 +172,18 @@ async def post_personality(guild_id: str):
         "personality",
         config.EMBEDS["personality"]["footer"],
     )
-    await channel.send(embed=embed)
-    await db.set_state(guild_id, "last_personality_post", datetime.now(timezone.utc).isoformat())
+
+    ping_role_id = await db.get_state(guild_id, "ping_role")
+    content = f"<@&{ping_role_id}>" if ping_role_id else None
+    await channel.send(content=content, embed=embed)
+
+
+# Map question type → post function
+QUESTION_POST_FNS = {
+    "typology": post_typology,
+    "casual": post_casual,
+    "personality": post_personality,
+}
 
 
 async def do_chip_drop(guild_id: str):
@@ -216,7 +263,7 @@ async def do_chatter_rewards(guild_id: str):
 
     lines = [config.MESSAGES["chatter_reward"]["announcement"]]
 
-    if len(chatters) == 1 or chatters[0]["user_id"] == chatters[1]["user_id"] if len(chatters) >= 2 else True:
+    if len(chatters) == 1 or (len(chatters) >= 2 and chatters[0]["user_id"] == chatters[1]["user_id"]):
         user = chatters[0]
         total = top_reward + second_reward if len(chatters) == 1 else top_reward
         await db.add_chips(guild_id, user["user_id"], user["username"], total)
@@ -249,110 +296,65 @@ async def do_chatter_rewards(guild_id: str):
 # ======================== SCHEDULED TASKS ========================
 
 
-async def _check_feature(gid: str, now: datetime, feature: str, post_fn):
-    """Generic schedule checker for daily question features."""
-    if not config.FEATURES.get(feature):
-        return
-    sched = config.SCHEDULE.get(feature, {})
-    if not sched.get("enabled"):
-        return
-
-    # Check for manual timer override (from /resettimer)
-    override = await db.get_state(gid, f"next_{feature}")
-    if override:
-        ot = datetime.fromisoformat(override)
-        if ot.tzinfo is None:
-            ot = ot.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) >= ot:
-            try:
-                await post_fn(gid)
-            except Exception as e:
-                print(f"Error posting {feature}: {e}")
-            await db.delete_state(gid, f"next_{feature}")
-        return  # Don't also check regular schedule when override exists
-
-    # Custom schedule from /setschedule (stored in DB)
-    custom = await db.get_state(gid, f"schedule_{feature}")
-    if custom:
-        h, m = map(int, custom.split(":"))
-    else:
-        h, m = sched["hour"], sched["minute"]
-
-    if now.hour == h and now.minute == m:
-        # Already posted today?
-        last = await db.get_state(gid, f"last_{feature}_post")
-        if last:
-            ld = datetime.fromisoformat(last)
-            if ld.tzinfo is None:
-                ld = ld.replace(tzinfo=timezone.utc)
-            if ld.astimezone(MANILA_TZ).date() >= now.date():
-                return
-        try:
-            await post_fn(gid)
-        except Exception as e:
-            print(f"Error posting {feature}: {e}")
-
-
-async def _check_chatter(gid: str, now: datetime):
-    """Check if it's time for chatter rewards."""
-    if not config.FEATURES.get("chatter_rewards"):
-        return
-    sched = config.SCHEDULE.get("chatter_reward", {})
-    if not sched.get("enabled"):
-        return
-
-    override = await db.get_state(gid, "next_chatter")
-    if override:
-        ot = datetime.fromisoformat(override)
-        if ot.tzinfo is None:
-            ot = ot.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) >= ot:
-            try:
-                await do_chatter_rewards(gid)
-            except Exception as e:
-                print(f"Error doing chatter rewards: {e}")
-            await db.delete_state(gid, "next_chatter")
-        return
-
-    custom = await db.get_state(gid, "schedule_chatter")
-    if custom:
-        h, m = map(int, custom.split(":"))
-    else:
-        h, m = sched["hour"], sched["minute"]
-
-    if now.hour == h and now.minute == m:
-        last = await db.get_state(gid, "last_chatter_post")
-        if last:
-            ld = datetime.fromisoformat(last)
-            if ld.tzinfo is None:
-                ld = ld.replace(tzinfo=timezone.utc)
-            if ld.astimezone(MANILA_TZ).date() >= now.date():
-                return
-        try:
-            await do_chatter_rewards(gid)
-        except Exception as e:
-            print(f"Error doing chatter rewards: {e}")
-
-
 @tasks.loop(seconds=60)
 async def schedule_loop():
-    """Main schedule loop — checks all features every minute."""
-    now = datetime.now(MANILA_TZ)
+    """Main schedule loop — checks daily questions and chatter every minute."""
+    now_utc = datetime.now(timezone.utc)
+    now_manila = datetime.now(MANILA_TZ)
 
     for guild in bot.guilds:
         gid = str(guild.id)
 
-        for feature, post_fn in [
-            ("typology", post_typology),
-            ("spark", post_spark),
-            ("personality", post_personality),
-        ]:
-            await _check_feature(gid, now, feature, post_fn)
+        # --- Daily Questions (rotating with auto-calculated gap) ---
+        next_q_iso = await db.get_state(gid, "next_daily_question")
+        if not next_q_iso:
+            # First run — schedule first question in 1 minute for quick start
+            next_time = now_utc + timedelta(minutes=1)
+            await db.set_state(gid, "next_daily_question", next_time.isoformat())
+            await db.set_state(gid, "daily_question_index", "0")
+        else:
+            next_q = datetime.fromisoformat(next_q_iso)
+            if next_q.tzinfo is None:
+                next_q = next_q.replace(tzinfo=timezone.utc)
 
-        await _check_chatter(gid, now)
+            if now_utc >= next_q:
+                # Time to post!
+                idx_str = await db.get_state(gid, "daily_question_index") or "0"
+                idx = int(idx_str) % len(DAILY_QUESTION_ORDER)
+                qtype = DAILY_QUESTION_ORDER[idx]
+                post_fn = QUESTION_POST_FNS.get(qtype)
 
-        # Code purple check at the top of every hour
-        if now.minute == 0:
+                if post_fn:
+                    try:
+                        await post_fn(gid)
+                    except Exception as e:
+                        print(f"Error posting {qtype}: {e}")
+
+                # Schedule next question
+                next_idx = (idx + 1) % len(DAILY_QUESTION_ORDER)
+                next_time = now_utc + timedelta(hours=QUESTION_GAP_HOURS)
+                await db.set_state(gid, "next_daily_question", next_time.isoformat())
+                await db.set_state(gid, "daily_question_index", str(next_idx))
+
+        # --- Chatter Rewards (fixed Manila time) ---
+        sched = config.CHATTER_SCHEDULE
+        if now_manila.hour == sched["hour"] and now_manila.minute == sched["minute"]:
+            last = await db.get_state(gid, "last_chatter_post")
+            should_post = True
+            if last:
+                ld = datetime.fromisoformat(last)
+                if ld.tzinfo is None:
+                    ld = ld.replace(tzinfo=timezone.utc)
+                if ld.astimezone(MANILA_TZ).date() >= now_manila.date():
+                    should_post = False
+            if should_post:
+                try:
+                    await do_chatter_rewards(gid)
+                except Exception as e:
+                    print(f"Error doing chatter rewards: {e}")
+
+        # --- Code Purple (every hour) ---
+        if now_manila.minute == 0:
             await check_code_purple(gid)
 
 
@@ -422,10 +424,10 @@ class ChipDropView(discord.ui.View):
                 pass
 
 
-# ======================== WORD GAME HELPERS ========================
+# ======================== WORD GAME ========================
 
 
-def build_word_game_embed(words: str, word_count: int, active: bool, last_user=None) -> discord.Embed:
+def build_word_game_embed(story: str, word_count: int, active: bool, last_user=None) -> discord.Embed:
     wg = config.WORD_GAME
     if active:
         title = wg["embed"]["title"]
@@ -434,10 +436,10 @@ def build_word_game_embed(words: str, word_count: int, active: bool, last_user=N
         title = wg["embed"]["title_ended"]
         footer = f"{word_count} {wg['embed']['footer_ended']}"
 
-    story = words if words else wg["embed"]["empty_story"]
+    display = story if story else wg["embed"]["empty_story"]
     color = int(wg["embed"]["color"], 16)
 
-    embed = discord.Embed(title=title, description=story, color=color)
+    embed = discord.Embed(title=title, description=display, color=color)
     embed.set_footer(text=footer)
 
     if last_user and active:
@@ -447,6 +449,68 @@ def build_word_game_embed(words: str, word_count: int, active: bool, last_user=N
         )
 
     return embed
+
+
+class WordGameActiveView(discord.ui.View):
+    """Persistent view with 'End this story' button on active game embeds."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="End this story", style=discord.ButtonStyle.danger, custom_id="wordgame_end")
+    async def end_story(self, interaction: discord.Interaction, button: discord.ui.Button):
+        gid = str(interaction.guild_id)
+        game = await db.get_word_game(gid)
+        if not game or not game["active"]:
+            await interaction.response.send_message("No active game to end.", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        await db.end_word_game(gid)
+        game = await db.get_word_game(gid)
+
+        # Delete current message
+        try:
+            await interaction.message.delete()
+        except Exception:
+            pass
+
+        # Post completed story with Start button
+        story = format_story(game["words"])
+        embed = build_word_game_embed(story, game["word_count"], False)
+        view = WordGameStartView()
+        end_text = f"📖 {interaction.user.mention} ended the story! ({game['word_count']} words total)."
+        msg = await interaction.channel.send(content=end_text, embed=embed, view=view)
+        await db.update_word_game_message(gid, str(msg.id))
+
+
+class WordGameStartView(discord.ui.View):
+    """Persistent view with 'Start new story' button on ended game embeds."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Start new story", style=discord.ButtonStyle.success, custom_id="wordgame_start")
+    async def start_story(self, interaction: discord.Interaction, button: discord.ui.Button):
+        gid = str(interaction.guild_id)
+        game = await db.get_word_game(gid)
+        if game and game["active"]:
+            await interaction.response.send_message("A game is already active!", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+
+        # Delete this message (the completed story / start prompt)
+        try:
+            await interaction.message.delete()
+        except Exception:
+            pass
+
+        # Start new game
+        embed = build_word_game_embed("", 0, True)
+        view = WordGameActiveView()
+        msg = await interaction.channel.send(embed=embed, view=view)
+        await db.create_word_game(gid, str(interaction.channel.id), str(msg.id))
 
 
 # ======================== SLASH COMMANDS ========================
@@ -514,61 +578,6 @@ async def leaderboard_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-# ---------- Word Game ----------
-
-
-@bot.tree.command(name="wordgame", description="Start, end, or view the word game")
-@app_commands.describe(action="What to do")
-@app_commands.choices(
-    action=[
-        app_commands.Choice(name="Start a new game", value="start"),
-        app_commands.Choice(name="End the current game", value="end"),
-        app_commands.Choice(name="View the current story", value="view"),
-    ]
-)
-async def wordgame_cmd(interaction: discord.Interaction, action: app_commands.Choice[str]):
-    gid = str(interaction.guild_id)
-    game = await db.get_word_game(gid)
-
-    if action.value == "start":
-        if game and game["active"]:
-            await interaction.response.send_message(config.MESSAGES["word_game"]["already_active"], ephemeral=True)
-            return
-
-        channel_id = await db.get_channel(gid, "wordgame")
-        target_channel = bot.get_channel(int(channel_id)) if channel_id else interaction.channel
-        if not target_channel:
-            await interaction.response.send_message(config.MESSAGES["word_game"]["failed"], ephemeral=True)
-            return
-
-        embed = build_word_game_embed("", 0, True)
-        msg = await target_channel.send(embed=embed)
-        await db.create_word_game(gid, str(target_channel.id), str(msg.id))
-        await interaction.response.send_message(config.MESSAGES["word_game"]["started"], ephemeral=True)
-
-    elif action.value == "end":
-        if not game or not game["active"]:
-            await interaction.response.send_message(config.MESSAGES["word_game"]["no_game_end"], ephemeral=True)
-            return
-        await db.end_word_game(gid)
-        game = await db.get_word_game(gid)
-        try:
-            ch = bot.get_channel(int(game["channel_id"]))
-            m = await ch.fetch_message(int(game["message_id"]))
-            await m.edit(embed=build_word_game_embed(game["words"], game["word_count"], False))
-        except Exception:
-            pass
-        reply = config.MESSAGES["word_game"]["ended"].format(user=interaction.user.mention, count=game["word_count"])
-        await interaction.response.send_message(reply)
-
-    elif action.value == "view":
-        if not game:
-            await interaction.response.send_message(config.MESSAGES["word_game"]["no_game"], ephemeral=True)
-            return
-        embed = build_word_game_embed(game["words"], game["word_count"], game["active"])
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
 # ---------- Admin ----------
 
 
@@ -596,14 +605,13 @@ async def forcedrop_cmd(interaction: discord.Interaction):
 @app_commands.choices(
     type=[
         app_commands.Choice(name="Typology Daily", value="typology"),
-        app_commands.Choice(name="Daily Spark", value="spark"),
+        app_commands.Choice(name="Casual Question Daily", value="casual"),
         app_commands.Choice(name="Personality Daily", value="personality"),
     ]
 )
 async def forcequestion_cmd(interaction: discord.Interaction, type: app_commands.Choice[str]):
     gid = str(interaction.guild_id)
-    fns = {"typology": post_typology, "spark": post_spark, "personality": post_personality}
-    fn = fns.get(type.value)
+    fn = QUESTION_POST_FNS.get(type.value)
     if fn:
         await fn(gid)
         ch = await db.get_channel(gid, type.value)
@@ -636,17 +644,17 @@ async def stats_cmd(interaction: discord.Interaction):
     total_users = await db.get_total_users(gid)
 
     used_t = len(await db.get_used_questions(gid, "typology"))
-    used_s = len(await db.get_used_questions(gid, "spark"))
+    used_c = len(await db.get_used_questions(gid, "casual"))
     used_p = len(await db.get_used_questions(gid, "personality"))
     total_t = len(config.TYPOLOGY_QUESTIONS)
-    total_s = len(config.SPARK_WYR) + len(config.SPARK_DEBATES) + len(config.SPARK_CHILL)
+    total_c = len(config.SPARK_WYR) + len(config.SPARK_DEBATES) + len(config.SPARK_CHILL)
     total_p = len(config.PERSONALITY_QUESTIONS)
 
-    last_t = await db.get_state(gid, "last_typology_post")
-    last_s = await db.get_state(gid, "last_spark_post")
-    last_pe = await db.get_state(gid, "last_personality_post")
+    next_q = await db.get_state(gid, "next_daily_question")
     last_cd = await db.get_state(gid, "last_chip_drop")
     last_cp = await db.get_state(gid, "last_code_purple")
+    q_idx = await db.get_state(gid, "daily_question_index") or "0"
+    next_type = DAILY_QUESTION_ORDER[int(q_idx) % len(DAILY_QUESTION_ORDER)]
 
     def fmt(iso):
         if not iso:
@@ -659,13 +667,12 @@ async def stats_cmd(interaction: discord.Interaction):
     embed = discord.Embed(title="📊 Bot Statistics", color=0x00BFFF, timestamp=datetime.now(timezone.utc))
     embed.add_field(name="👥 Users", value=str(total_users), inline=True)
     embed.add_field(name="❓ Typology Qs", value=f"{used_t}/{total_t}", inline=True)
-    embed.add_field(name="💬 Spark Qs", value=f"{used_s}/{total_s}", inline=True)
+    embed.add_field(name="💬 Casual Qs", value=f"{used_c}/{total_c}", inline=True)
     embed.add_field(name="🧠 Personality Qs", value=f"{used_p}/{total_p}", inline=True)
-    embed.add_field(name="📅 Last Typology", value=fmt(last_t), inline=True)
-    embed.add_field(name="💫 Last Spark", value=fmt(last_s), inline=True)
-    embed.add_field(name="🧠 Last Personality", value=fmt(last_pe), inline=True)
+    embed.add_field(name="📅 Next Question", value=f"{next_type.title()} {fmt(next_q)}", inline=True)
     embed.add_field(name="🥔 Last Chip Drop", value=fmt(last_cd), inline=True)
     embed.add_field(name="💜 Last Code Purple", value=fmt(last_cp), inline=True)
+    embed.add_field(name="⏱️ Question Gap", value=f"{QUESTION_GAP_HOURS:.0f}h", inline=True)
     embed.set_footer(text="CRISPS GC Bot Stats")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -676,7 +683,7 @@ async def stats_cmd(interaction: discord.Interaction):
 @app_commands.choices(
     feature=[
         app_commands.Choice(name="Typology Daily", value="typology"),
-        app_commands.Choice(name="Daily Spark", value="spark"),
+        app_commands.Choice(name="Casual Question Daily", value="casual"),
         app_commands.Choice(name="Personality Daily", value="personality"),
         app_commands.Choice(name="Code Purple", value="codepurple"),
         app_commands.Choice(name="Chip Drops", value="chipdrop"),
@@ -691,6 +698,20 @@ async def setchannel_cmd(
     target = channel or interaction.channel
     gid = str(interaction.guild_id)
     await db.set_channel(gid, feature.value, str(target.id))
+
+    # If setting word game channel, send initial "Start new story" embed
+    if feature.value == "wordgame":
+        game = await db.get_word_game(gid)
+        if not game or not game["active"]:
+            embed = discord.Embed(
+                title="📖 Word Game",
+                description="*Click the button below to start a new story!*",
+                color=int(config.WORD_GAME["embed"]["color"], 16),
+            )
+            embed.set_footer(text="One word per message • Punctuation auto-formats")
+            view = WordGameStartView()
+            await target.send(embed=embed, view=view)
+
     await interaction.response.send_message(f"{feature.name} channel set to {target.mention}", ephemeral=True)
 
 
@@ -702,7 +723,7 @@ async def viewchannels_cmd(interaction: discord.Interaction):
 
     features = {
         "typology": "✨ Typology Daily",
-        "spark": "💫 Daily Spark",
+        "casual": "💬 Casual Question Daily",
         "personality": "🧠 Personality Daily",
         "codepurple": "💜 Code Purple",
         "chipdrop": "🥔 Chip Drops",
@@ -723,37 +744,40 @@ async def viewchannels_cmd(interaction: discord.Interaction):
 @app_commands.default_permissions(administrator=True)
 async def viewschedule_cmd(interaction: discord.Interaction):
     gid = str(interaction.guild_id)
-    now = datetime.now(MANILA_TZ)
+    now_utc = datetime.now(timezone.utc)
+    now_manila = datetime.now(MANILA_TZ)
 
-    lines = ["**📅 Upcoming Scheduled Posts**", ""]
+    lines = ["**📅 Upcoming Schedule**", ""]
 
-    for feature, name in [("typology", "Typology Daily"), ("spark", "Daily Spark"), ("personality", "Personality Daily")]:
-        override = await db.get_state(gid, f"next_{feature}")
-        if override:
-            ot = datetime.fromisoformat(override)
-            if ot.tzinfo is None:
-                ot = ot.replace(tzinfo=timezone.utc)
-            ts = int(ot.timestamp())
-            lines.append(f"⏰ **{name}** <t:{ts}:R>")
-        else:
-            custom = await db.get_state(gid, f"schedule_{feature}")
-            if custom:
-                sh, sm = map(int, custom.split(":"))
-            else:
-                sched = config.SCHEDULE.get(feature, {})
-                sh, sm = sched.get("hour", 0), sched.get("minute", 0)
-            next_time = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
-            if next_time <= now:
-                next_time += timedelta(days=1)
-            # Convert to UTC timestamp for Discord
-            ts = int(next_time.astimezone(timezone.utc).timestamp())
-            lines.append(f"⏰ **{name}** <t:{ts}:R>")
+    # Daily questions — show next 3 in rotation
+    next_q_iso = await db.get_state(gid, "next_daily_question")
+    q_idx = int(await db.get_state(gid, "daily_question_index") or "0")
+
+    if next_q_iso:
+        next_q = datetime.fromisoformat(next_q_iso)
+        if next_q.tzinfo is None:
+            next_q = next_q.replace(tzinfo=timezone.utc)
+    else:
+        next_q = now_utc + timedelta(minutes=1)
+
+    names = {
+        "typology": "✨ Typology Daily",
+        "casual": "💬 Casual Question",
+        "personality": "🧠 Personality Daily",
+    }
+    for i in range(len(DAILY_QUESTION_ORDER)):
+        idx = (q_idx + i) % len(DAILY_QUESTION_ORDER)
+        qtype = DAILY_QUESTION_ORDER[idx]
+        post_time = next_q + timedelta(hours=QUESTION_GAP_HOURS * i)
+        ts = int(post_time.timestamp())
+        lines.append(f"⏰ **{names[qtype]}** <t:{ts}:R>")
+
+    lines.append("")
 
     # Chatter rewards
-    sched = config.SCHEDULE.get("chatter_reward", {})
-    sh, sm = sched.get("hour", 23), sched.get("minute", 59)
-    next_chatter = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
-    if next_chatter <= now:
+    sched = config.CHATTER_SCHEDULE
+    next_chatter = now_manila.replace(hour=sched["hour"], minute=sched["minute"], second=0, microsecond=0)
+    if next_chatter <= now_manila:
         next_chatter += timedelta(days=1)
     ts = int(next_chatter.astimezone(timezone.utc).timestamp())
     lines.append(f"⏰ **Chatter Rewards** <t:{ts}:R>")
@@ -761,77 +785,74 @@ async def viewschedule_cmd(interaction: discord.Interaction):
     lines.append(f"💜 **Code Purple Check** every hour")
     lines.append(f"🥔 **Chip Drops** every {config.CHIP_DROP['min_interval']}-{config.CHIP_DROP['max_interval']}m")
     lines.append("")
-    lines.append(f"*Current time: {now.strftime('%I:%M %p')} Manila*")
+    lines.append(f"*Question gap: {QUESTION_GAP_HOURS:.0f}h • {len(DAILY_QUESTION_ORDER)} daily questions*")
 
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
 
-@bot.tree.command(name="resettimer", description="Reset timer for scheduled features (admin only)")
+@bot.tree.command(name="resettimer", description="Reset the daily question timer (admin only)")
 @app_commands.default_permissions(administrator=True)
-@app_commands.describe(feature="Feature to reset")
+@app_commands.describe(feature="What to reset")
 @app_commands.choices(
     feature=[
-        app_commands.Choice(name="All Features", value="all"),
-        app_commands.Choice(name="Chip Drop", value="chipdrop"),
-        app_commands.Choice(name="Typology Daily", value="typology"),
-        app_commands.Choice(name="Daily Spark", value="spark"),
-        app_commands.Choice(name="Personality Daily", value="personality"),
-        app_commands.Choice(name="Chatter Rewards", value="chatter"),
+        app_commands.Choice(name="Next Daily Question (posts in ~1 min)", value="daily"),
+        app_commands.Choice(name="Chip Drop (triggers in ~1 min)", value="chipdrop"),
     ]
 )
 async def resettimer_cmd(interaction: discord.Interaction, feature: app_commands.Choice[str]):
     gid = str(interaction.guild_id)
     now = datetime.now(timezone.utc)
-    msgs = []
 
-    targets = {
-        "chipdrop": ("next_chip_drop", "🥔 chip drop → ~1 minute", 1),
-        "typology": ("next_typology", "✨ typology → ~2 minutes", 2),
-        "spark": ("next_spark", "💫 spark → ~2 minutes", 2),
-        "personality": ("next_personality", "🧠 personality → ~2 minutes", 2),
-        "chatter": ("next_chatter", "💬 chatter → ~2 minutes", 2),
-    }
-
-    if feature.value == "all":
-        for state_key, msg, mins in targets.values():
-            await db.set_state(gid, state_key, (now + timedelta(minutes=mins)).isoformat())
-            msgs.append(msg)
-    elif feature.value in targets:
-        state_key, msg, mins = targets[feature.value]
-        await db.set_state(gid, state_key, (now + timedelta(minutes=mins)).isoformat())
-        msgs.append(msg)
-
-    await interaction.response.send_message(
-        f"Timers reset:\n" + "\n".join(msgs) if msgs else "No timers reset",
-        ephemeral=True,
-    )
+    if feature.value == "daily":
+        await db.set_state(gid, "next_daily_question", (now + timedelta(minutes=1)).isoformat())
+        q_idx = int(await db.get_state(gid, "daily_question_index") or "0")
+        next_type = DAILY_QUESTION_ORDER[q_idx % len(DAILY_QUESTION_ORDER)]
+        await interaction.response.send_message(
+            f"Daily question timer reset — **{next_type.title()}** will post in ~1 minute", ephemeral=True
+        )
+    elif feature.value == "chipdrop":
+        await interaction.response.send_message("Chip drop timer reset — will trigger in ~1 minute", ephemeral=True)
+        await do_chip_drop(gid)
 
 
-@bot.tree.command(name="setschedule", description="Set the time for scheduled posts (admin only)")
+# ---------- Ping Role ----------
+
+
+@bot.tree.command(name="setpingrole", description="Set the role to ping for daily questions (admin only)")
 @app_commands.default_permissions(administrator=True)
-@app_commands.describe(feature="Feature to schedule", hour="Hour (0-23, Manila time)", minute="Minute (0-59)")
-@app_commands.choices(
-    feature=[
-        app_commands.Choice(name="Typology Daily", value="typology"),
-        app_commands.Choice(name="Daily Spark", value="spark"),
-        app_commands.Choice(name="Personality Daily", value="personality"),
-        app_commands.Choice(name="Chatter Rewards", value="chatter"),
-    ]
-)
-async def setschedule_cmd(
-    interaction: discord.Interaction,
-    feature: app_commands.Choice[str],
-    hour: int,
-    minute: int,
-):
-    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
-        await interaction.response.send_message("Invalid time. Hour: 0-23, Minute: 0-59", ephemeral=True)
-        return
+@app_commands.describe(role="The role to ping when daily questions are posted")
+async def setpingrole_cmd(interaction: discord.Interaction, role: discord.Role):
     gid = str(interaction.guild_id)
-    await db.set_state(gid, f"schedule_{feature.value}", f"{hour}:{minute}")
-    await interaction.response.send_message(
-        f"{feature.name} scheduled for **{hour:02d}:{minute:02d}** Manila time", ephemeral=True
+    await db.set_state(gid, "ping_role", str(role.id))
+    await interaction.response.send_message(f"Daily question ping role set to {role.mention}", ephemeral=True)
+
+
+@bot.tree.command(name="placepingrolepicker", description="Post a reaction role picker for daily question pings (admin only)")
+@app_commands.default_permissions(administrator=True)
+async def placepingrolepicker_cmd(interaction: discord.Interaction):
+    gid = str(interaction.guild_id)
+    role_id = await db.get_state(gid, "ping_role")
+    if not role_id:
+        await interaction.response.send_message(
+            "No ping role set! Use `/setpingrole` first.", ephemeral=True
+        )
+        return
+
+    embed = discord.Embed(
+        title="🔔 Daily Question Notifications",
+        description=f"React with 👍 to get the <@&{role_id}> role and be pinged for daily questions!\n\nUnreact to remove the role.",
+        color=int(config.COLORS["typology"], 16),
+        timestamp=datetime.now(timezone.utc),
     )
+    embed.set_footer(text="React below to toggle notifications")
+    if config.AUTHOR_NAME:
+        embed.set_author(name=config.AUTHOR_NAME)
+
+    await interaction.response.defer(ephemeral=True)
+    msg = await interaction.channel.send(embed=embed)
+    await msg.add_reaction("👍")
+    await db.set_state(gid, "role_picker_message", str(msg.id))
+    await interaction.followup.send("Role picker posted! ✅", ephemeral=True)
 
 
 # ======================== EVENTS ========================
@@ -842,6 +863,9 @@ async def on_ready():
     if not hasattr(bot, "_initialized"):
         bot._initialized = True
         await db.init()
+        # Register persistent views so buttons survive restarts
+        bot.add_view(WordGameActiveView())
+        bot.add_view(WordGameStartView())
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
@@ -849,69 +873,137 @@ async def on_ready():
 
 
 @bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    """Handle reaction role picker — add role on 👍 react."""
+    if payload.user_id == bot.user.id:
+        return
+    if str(payload.emoji) != "👍":
+        return
+
+    gid = str(payload.guild_id)
+    picker_msg_id = await db.get_state(gid, "role_picker_message")
+    if not picker_msg_id or str(payload.message_id) != picker_msg_id:
+        return
+
+    role_id = await db.get_state(gid, "ping_role")
+    if not role_id:
+        return
+
+    guild = bot.get_guild(payload.guild_id)
+    if not guild:
+        return
+    member = guild.get_member(payload.user_id)
+    if not member:
+        try:
+            member = await guild.fetch_member(payload.user_id)
+        except Exception:
+            return
+
+    role = guild.get_role(int(role_id))
+    if not role:
+        return
+
+    try:
+        await member.add_roles(role)
+    except Exception as e:
+        print(f"Failed to add role: {e}")
+
+
+@bot.event
+async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
+    """Handle reaction role picker — remove role on 👍 unreact."""
+    if str(payload.emoji) != "👍":
+        return
+
+    gid = str(payload.guild_id)
+    picker_msg_id = await db.get_state(gid, "role_picker_message")
+    if not picker_msg_id or str(payload.message_id) != picker_msg_id:
+        return
+
+    role_id = await db.get_state(gid, "ping_role")
+    if not role_id:
+        return
+
+    guild = bot.get_guild(payload.guild_id)
+    if not guild:
+        return
+    member = guild.get_member(payload.user_id)
+    if not member:
+        try:
+            member = await guild.fetch_member(payload.user_id)
+        except Exception:
+            return
+
+    role = guild.get_role(int(role_id))
+    if not role:
+        return
+
+    try:
+        await member.remove_roles(role)
+    except Exception as e:
+        print(f"Failed to remove role: {e}")
+
+
+@bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
         return
     gid = str(message.guild.id)
+
     # Track activity for code purple & chatter rewards
     await db.set_state(gid, "last_message_time", datetime.now(timezone.utc).isoformat())
     await db.increment_chatter(gid, str(message.author.id), message.author.display_name)
 
-    # Word game - check if message is in active word game channel
+    # Word game — every message in the game channel adds a word
     game = await db.get_word_game(gid)
     if game and game["active"] and str(message.channel.id) == game["channel_id"]:
         word = message.content.strip()
 
-        # Check for END command first (anyone can end the game)
-        if word.upper() == "END":
-            # End the game
-            await db.end_word_game(gid)
-            game = await db.get_word_game(gid)
-            try:
-                await message.delete()
-                old_msg = await message.channel.fetch_message(int(game["message_id"]))
-                await old_msg.delete()
-            except Exception:
-                pass
-            embed = build_word_game_embed(game["words"], game["word_count"], False)
-            end_msg = f"📖 {message.author.mention} ended the story! ({game['word_count']} words total)."
-            await message.channel.send(content=end_msg, embed=embed)
-        # Validate - single word only
-        elif " " in word or not re.match(r"^[\w''.,!?;:\-]+$", word):
-            # Not a valid word, just ignore (don't spam errors for normal chat)
-            pass
-        elif game["last_contributor_id"] == str(message.author.id):
-            # Same person can't go twice
-            try:
-                await message.delete()
-                warn = await message.channel.send(
-                    f"{message.author.mention} You can't add two words in a row! Let someone else go.",
-                    delete_after=3,
-                )
-            except Exception:
-                pass
-        else:
-            # Valid word - add it
-            await db.add_word(gid, word, str(message.author.id))
-            game = await db.get_word_game(gid)
+        # Validate — single word/punctuation, not too long, no links/mentions
+        valid = (
+            word
+            and " " not in word
+            and len(word) <= 45
+            and not word.startswith("http")
+            and not word.startswith("<")
+            and re.match(r"^[\w''.,!?;:\-…\"]+$", word)
+        )
 
-            # Delete user's message
-            try:
-                await message.delete()
-            except Exception:
-                pass
+        if valid:
+            # Same person can't go twice in a row
+            if game["last_contributor_id"] == str(message.author.id):
+                try:
+                    await message.delete()
+                    await message.channel.send(
+                        f"{message.author.mention} You can't add two words in a row! Let someone else go.",
+                        delete_after=3,
+                    )
+                except Exception:
+                    pass
+            else:
+                # Add the word
+                await db.add_word(gid, word, str(message.author.id))
+                game = await db.get_word_game(gid)
 
-            # Delete old bot message and send new one
-            try:
-                old_msg = await message.channel.fetch_message(int(game["message_id"]))
-                await old_msg.delete()
-            except Exception:
-                pass
+                # Delete user's message
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
 
-            embed = build_word_game_embed(game["words"], game["word_count"], True, message.author)
-            new_msg = await message.channel.send(embed=embed)
-            # Update stored message ID
-            await db.update_word_game_message(gid, str(new_msg.id))
+                # Delete old bot message
+                try:
+                    old_msg = await message.channel.fetch_message(int(game["message_id"]))
+                    await old_msg.delete()
+                except Exception:
+                    pass
+
+                # Format and send new embed with End button
+                story = format_story(game["words"])
+                embed = build_word_game_embed(story, game["word_count"], True, message.author)
+                view = WordGameActiveView()
+                new_msg = await message.channel.send(embed=embed, view=view)
+                await db.update_word_game_message(gid, str(new_msg.id))
 
     await bot.process_commands(message)
 

@@ -59,6 +59,13 @@ async def init():
                 active INTEGER DEFAULT 0
             );
         """)
+        # Migration: rename spark → casual
+        await conn.execute(
+            "UPDATE bot_state SET key = 'channel_casual' WHERE key = 'channel_spark'"
+        )
+        await conn.execute(
+            "UPDATE question_usage SET question_type = 'casual' WHERE question_type = 'spark'"
+        )
         await conn.commit()
 
 
@@ -251,7 +258,7 @@ async def set_channel(guild_id: str, feature: str, channel_id: str):
 
 
 async def get_all_channels(guild_id: str) -> dict:
-    features = ["typology", "spark", "personality", "codepurple", "chipdrop", "wordgame"]
+    features = ["typology", "casual", "personality", "codepurple", "chipdrop", "wordgame"]
     result = {}
     for f in features:
         result[f] = await get_channel(guild_id, f)
