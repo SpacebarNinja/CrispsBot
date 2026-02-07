@@ -699,20 +699,20 @@ async def setchannel_cmd(
     gid = str(interaction.guild_id)
     await db.set_channel(gid, feature.value, str(target.id))
 
-    # If setting word game channel, send initial "Start new story" embed
+    # If setting word game channel, always send "Start new story" embed
     if feature.value == "wordgame":
-        game = await db.get_word_game(gid)
-        if not game or not game["active"]:
-            embed = discord.Embed(
-                title="📖 Word Game",
-                description="*Click the button below to start a new story!*",
-                color=int(config.WORD_GAME["embed"]["color"], 16),
-            )
-            embed.set_footer(text="One word per message • Punctuation auto-formats")
-            view = WordGameStartView()
-            await target.send(embed=embed, view=view)
-
-    await interaction.response.send_message(f"{feature.name} channel set to {target.mention}", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        embed = discord.Embed(
+            title="📖 Word Game",
+            description="*Click the button below to start a new story!*",
+            color=int(config.WORD_GAME["embed"]["color"], 16),
+        )
+        embed.set_footer(text="One word per message • Punctuation auto-formats")
+        view = WordGameStartView()
+        await target.send(embed=embed, view=view)
+        await interaction.followup.send(f"{feature.name} channel set to {target.mention}", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"{feature.name} channel set to {target.mention}", ephemeral=True)
 
 
 @bot.tree.command(name="viewchannels", description="View current channel settings (admin only)")
@@ -869,7 +869,7 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally.")
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.0)")
 
 
 @bot.event
