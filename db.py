@@ -1,20 +1,95 @@
 """
-Database layer - SQLite via aiosqlite
-All bot data stored locally in bot_data.db
+Database layer - Turso (cloud) or SQLite (local fallback)
+Uses libsql for Turso, aiosqlite for local development
 """
 
-import aiosqlite
 import os
+import asyncio
 from datetime import datetime, timezone
+from contextlib import asynccontextmanager
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_data.db")
+# Check for Turso configuration
+TURSO_URL = os.environ.get("TURSO_DATABASE_URL")
+TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
+USE_TURSO = bool(TURSO_URL and TURSO_TOKEN)
+
+if USE_TURSO:
+    import libsql_experimental as libsql
+    print(f"[DB] Using Turso cloud database")
+else:
+    import aiosqlite
+    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_data.db")
+    print(f"[DB] Using local SQLite: {DB_PATH}")
+
+
+# ==================== CONNECTION WRAPPER ====================
+
+class TursoConnection:
+    """Wrapper to make libsql work like aiosqlite"""
+    def __init__(self, conn):
+        self._conn = conn
+        self._cursor = None
+    
+    async def execute(self, sql, params=None):
+        def _exec():
+            if params:
+                return self._conn.execute(sql, params)
+            return self._conn.execute(sql)
+        result = await asyncio.to_thread(_exec)
+        self._cursor = result
+        return self
+    
+    async def executescript(self, sql):
+        def _exec():
+            return self._conn.executescript(sql)
+        await asyncio.to_thread(_exec)
+        return self
+    
+    async def fetchone(self):
+        if self._cursor is None:
+            return None
+        def _fetch():
+            return self._cursor.fetchone()
+        return await asyncio.to_thread(_fetch)
+    
+    async def fetchall(self):
+        if self._cursor is None:
+            return []
+        def _fetch():
+            return self._cursor.fetchall()
+        return await asyncio.to_thread(_fetch)
+    
+    async def commit(self):
+        def _commit():
+            self._conn.commit()
+        await asyncio.to_thread(_commit)
+    
+    async def close(self):
+        pass  # Turso connections don't need explicit close
+
+
+@asynccontextmanager
+async def get_connection():
+    """Get a database connection - works with both Turso and local SQLite"""
+    if USE_TURSO:
+        def _connect():
+            return libsql.connect(TURSO_URL, auth_token=TURSO_TOKEN)
+        conn = await asyncio.to_thread(_connect)
+        wrapper = TursoConnection(conn)
+        try:
+            yield wrapper
+        finally:
+            await wrapper.close()
+    else:
+        async with aiosqlite.connect(DB_PATH) as conn:
+            yield conn
 
 
 # ==================== INIT ====================
 
 async def init():
     """Create all tables if they don't exist"""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.executescript("""
             CREATE TABLE IF NOT EXISTS users (
                 guild_id TEXT NOT NULL,
@@ -87,46 +162,28 @@ async def init():
                 active INTEGER DEFAULT 0
             );
         """)
-        # Migration: rename spark → casual (legacy v1.x)
-        await conn.execute(
-            "UPDATE bot_state SET key = 'channel_casual' WHERE key = 'channel_spark'"
-        )
-        await conn.execute(
-            "UPDATE question_usage SET question_type = 'casual' WHERE question_type = 'spark'"
-        )
-        # v3.0 migration: restructure to warm/chill/typology
-        # casual → warm (WYR + Debates + Button)
-        await conn.execute(
-            "UPDATE bot_state SET key = 'channel_warm' WHERE key = 'channel_casual'"
-        )
-        await conn.execute(
-            "UPDATE bot_state SET key = 'ping_role_warm' WHERE key = 'ping_role_casual'"
-        )
-        await conn.execute(
-            "UPDATE bot_state SET key = 'role_picker_message_warm' WHERE key = 'role_picker_message_casual'"
-        )
-        # personality → chill (Chill + Lifestyle)
-        await conn.execute(
-            "UPDATE bot_state SET key = 'channel_chill' WHERE key = 'channel_personality'"
-        )
-        await conn.execute(
-            "UPDATE bot_state SET key = 'ping_role_chill' WHERE key = 'ping_role_personality'"
-        )
-        await conn.execute(
-            "UPDATE bot_state SET key = 'role_picker_message_chill' WHERE key = 'role_picker_message_personality'"
-        )
-        # typology channel stays as typology (it may already exist or need to be created)
-        # Clean up old question usage since categories changed
-        await conn.execute(
-            "DELETE FROM question_usage WHERE question_type IN ('casual', 'personality', 'personality_typology', 'personality_lifestyle', 'typology')"
-        )
+        await conn.commit()
+        
+        # Migrations (safe to run multiple times)
+        migrations = [
+            "UPDATE bot_state SET key = 'channel_casual' WHERE key = 'channel_spark'",
+            "UPDATE question_usage SET question_type = 'casual' WHERE question_type = 'spark'",
+            "UPDATE bot_state SET key = 'channel_warm' WHERE key = 'channel_casual'",
+            "UPDATE bot_state SET key = 'ping_role_warm' WHERE key = 'ping_role_casual'",
+            "UPDATE bot_state SET key = 'role_picker_message_warm' WHERE key = 'role_picker_message_casual'",
+            "UPDATE bot_state SET key = 'channel_chill' WHERE key = 'channel_personality'",
+            "UPDATE bot_state SET key = 'ping_role_chill' WHERE key = 'ping_role_personality'",
+            "UPDATE bot_state SET key = 'role_picker_message_chill' WHERE key = 'role_picker_message_personality'",
+        ]
+        for sql in migrations:
+            await conn.execute(sql)
         await conn.commit()
 
 
 # ==================== USERS / CHIPS ====================
 
 async def ensure_user(guild_id: str, user_id: str, username: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             """INSERT INTO users (guild_id, user_id, username, chips, created_at)
                VALUES (?, ?, ?, 0, ?)
@@ -138,7 +195,7 @@ async def ensure_user(guild_id: str, user_id: str, username: str):
 
 async def add_chips(guild_id: str, user_id: str, username: str, amount: int):
     await ensure_user(guild_id, user_id, username)
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "UPDATE users SET chips = chips + ? WHERE guild_id = ? AND user_id = ?",
             (amount, guild_id, user_id)
@@ -148,7 +205,7 @@ async def add_chips(guild_id: str, user_id: str, username: str, amount: int):
 
 async def set_chips(guild_id: str, user_id: str, username: str, amount: int):
     await ensure_user(guild_id, user_id, username)
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "UPDATE users SET chips = ? WHERE guild_id = ? AND user_id = ?",
             (amount, guild_id, user_id)
@@ -157,7 +214,7 @@ async def set_chips(guild_id: str, user_id: str, username: str, amount: int):
 
 
 async def get_balance(guild_id: str, user_id: str) -> int:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "SELECT chips FROM users WHERE guild_id = ? AND user_id = ?",
             (guild_id, user_id)
@@ -167,7 +224,7 @@ async def get_balance(guild_id: str, user_id: str) -> int:
 
 
 async def get_rank(guild_id: str, user_id: str) -> int | None:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             """SELECT COUNT(*) + 1 FROM users
                WHERE guild_id = ? AND chips > (
@@ -176,7 +233,6 @@ async def get_rank(guild_id: str, user_id: str) -> int | None:
             (guild_id, guild_id, user_id)
         )
         row = await cursor.fetchone()
-        # Check if user exists
         cursor2 = await conn.execute(
             "SELECT 1 FROM users WHERE guild_id = ? AND user_id = ? AND chips > 0",
             (guild_id, user_id)
@@ -186,7 +242,7 @@ async def get_rank(guild_id: str, user_id: str) -> int | None:
 
 
 async def get_leaderboard(guild_id: str, limit: int = 10) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "SELECT user_id, username, chips FROM users WHERE guild_id = ? ORDER BY chips DESC LIMIT ?",
             (guild_id, limit)
@@ -196,7 +252,7 @@ async def get_leaderboard(guild_id: str, limit: int = 10) -> list[dict]:
 
 
 async def get_total_users(guild_id: str) -> int:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "SELECT COUNT(*) FROM users WHERE guild_id = ?", (guild_id,)
         )
@@ -208,7 +264,7 @@ async def get_total_users(guild_id: str) -> int:
 
 async def increment_chatter(guild_id: str, user_id: str, username: str):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             """INSERT INTO daily_chatter (guild_id, user_id, username, message_count, date)
                VALUES (?, ?, ?, 1, ?)
@@ -220,7 +276,7 @@ async def increment_chatter(guild_id: str, user_id: str, username: str):
 
 
 async def get_top_chatters(guild_id: str, date: str) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             """SELECT user_id, username, message_count FROM daily_chatter
                WHERE guild_id = ? AND date = ?
@@ -232,7 +288,7 @@ async def get_top_chatters(guild_id: str, date: str) -> list[dict]:
 
 
 async def clear_daily_chatter(guild_id: str, date: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "DELETE FROM daily_chatter WHERE guild_id = ? AND date = ?",
             (guild_id, date)
@@ -243,7 +299,7 @@ async def clear_daily_chatter(guild_id: str, date: str):
 # ==================== QUESTION USAGE ====================
 
 async def get_used_questions(guild_id: str, question_type: str) -> list[int]:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "SELECT question_index FROM question_usage WHERE guild_id = ? AND question_type = ?",
             (guild_id, question_type)
@@ -253,7 +309,7 @@ async def get_used_questions(guild_id: str, question_type: str) -> list[int]:
 
 
 async def mark_question_used(guild_id: str, question_type: str, index: int):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "INSERT INTO question_usage (guild_id, question_type, question_index, used_at) VALUES (?, ?, ?, ?)",
             (guild_id, question_type, index, datetime.now(timezone.utc).isoformat())
@@ -262,7 +318,7 @@ async def mark_question_used(guild_id: str, question_type: str, index: int):
 
 
 async def reset_questions(guild_id: str, question_type: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "DELETE FROM question_usage WHERE guild_id = ? AND question_type = ?",
             (guild_id, question_type)
@@ -273,7 +329,7 @@ async def reset_questions(guild_id: str, question_type: str):
 # ==================== BOT STATE ====================
 
 async def get_state(guild_id: str, key: str) -> str | None:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "SELECT value FROM bot_state WHERE guild_id = ? AND key = ?",
             (guild_id, key)
@@ -283,7 +339,7 @@ async def get_state(guild_id: str, key: str) -> str | None:
 
 
 async def set_state(guild_id: str, key: str, value: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             """INSERT INTO bot_state (guild_id, key, value) VALUES (?, ?, ?)
                ON CONFLICT(guild_id, key) DO UPDATE SET value = excluded.value""",
@@ -293,7 +349,7 @@ async def set_state(guild_id: str, key: str, value: str):
 
 
 async def delete_state(guild_id: str, key: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "DELETE FROM bot_state WHERE guild_id = ? AND key = ?",
             (guild_id, key)
@@ -322,7 +378,6 @@ async def get_all_channels(guild_id: str) -> dict:
 # ==================== BLACKLIST ====================
 
 async def get_blacklisted_channels(guild_id: str) -> list[str]:
-    """Get list of blacklisted channel IDs for chip drops"""
     blacklist_str = await get_state(guild_id, "chipdrop_blacklist")
     if not blacklist_str:
         return []
@@ -330,7 +385,6 @@ async def get_blacklisted_channels(guild_id: str) -> list[str]:
 
 
 async def add_blacklisted_channel(guild_id: str, channel_id: str) -> bool:
-    """Add a channel to chip drop blacklist. Returns True if added, False if already exists."""
     blacklist = await get_blacklisted_channels(guild_id)
     if channel_id in blacklist:
         return False
@@ -340,7 +394,6 @@ async def add_blacklisted_channel(guild_id: str, channel_id: str) -> bool:
 
 
 async def remove_blacklisted_channel(guild_id: str, channel_id: str) -> bool:
-    """Remove a channel from chip drop blacklist. Returns True if removed, False if not found."""
     blacklist = await get_blacklisted_channels(guild_id)
     if channel_id not in blacklist:
         return False
@@ -350,7 +403,6 @@ async def remove_blacklisted_channel(guild_id: str, channel_id: str) -> bool:
 
 
 async def is_channel_blacklisted(guild_id: str, channel_id: str) -> bool:
-    """Check if a channel is blacklisted for chip drops"""
     blacklist = await get_blacklisted_channels(guild_id)
     return channel_id in blacklist
 
@@ -358,7 +410,7 @@ async def is_channel_blacklisted(guild_id: str, channel_id: str) -> bool:
 # ==================== WORD GAME ====================
 
 async def get_word_game(guild_id: str) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "SELECT channel_id, message_id, words, last_contributor_id, word_count, active FROM word_games WHERE guild_id = ?",
             (guild_id,)
@@ -377,7 +429,7 @@ async def get_word_game(guild_id: str) -> dict | None:
 
 
 async def create_word_game(guild_id: str, channel_id: str, message_id: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             """INSERT INTO word_games (guild_id, channel_id, message_id, words, last_contributor_id, word_count, active)
                VALUES (?, ?, ?, '', '', 0, 1)
@@ -390,7 +442,7 @@ async def create_word_game(guild_id: str, channel_id: str, message_id: str):
 
 
 async def add_word(guild_id: str, word: str, contributor_id: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         game = await get_word_game(guild_id)
         if not game:
             return
@@ -404,7 +456,7 @@ async def add_word(guild_id: str, word: str, contributor_id: str):
 
 
 async def end_word_game(guild_id: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "UPDATE word_games SET active = 0 WHERE guild_id = ?",
             (guild_id,)
@@ -413,8 +465,7 @@ async def end_word_game(guild_id: str):
 
 
 async def update_word_game_message(guild_id: str, message_id: str):
-    """Update the tracked message ID for the word game embed."""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "UPDATE word_games SET message_id = ? WHERE guild_id = ? AND active = 1",
             (message_id, guild_id)
@@ -425,9 +476,8 @@ async def update_word_game_message(guild_id: str, message_id: str):
 # ==================== DAILY ACTIVITY ====================
 
 async def increment_activity_message(guild_id: str, user_id: str, username: str):
-    """Add 1 message point for today"""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             """INSERT INTO daily_activity (guild_id, user_id, username, message_points, vc_minutes, date)
                VALUES (?, ?, ?, 1, 0, ?)
@@ -439,9 +489,8 @@ async def increment_activity_message(guild_id: str, user_id: str, username: str)
 
 
 async def add_vc_minutes(guild_id: str, user_id: str, username: str, minutes: int):
-    """Add VC minutes for today"""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             """INSERT INTO daily_activity (guild_id, user_id, username, message_points, vc_minutes, date)
                VALUES (?, ?, ?, 0, ?, ?)
@@ -453,8 +502,7 @@ async def add_vc_minutes(guild_id: str, user_id: str, username: str, minutes: in
 
 
 async def get_top_activity(guild_id: str, date: str) -> list[dict]:
-    """Get top 3 users by total points (messages + vc minutes)"""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             """SELECT user_id, username, message_points, vc_minutes, (message_points + vc_minutes) as total
                FROM daily_activity
@@ -467,7 +515,7 @@ async def get_top_activity(guild_id: str, date: str) -> list[dict]:
 
 
 async def clear_daily_activity(guild_id: str, date: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "DELETE FROM daily_activity WHERE guild_id = ? AND date = ?",
             (guild_id, date)
@@ -478,8 +526,7 @@ async def clear_daily_activity(guild_id: str, date: str):
 # ==================== VC SESSIONS ====================
 
 async def start_vc_session(guild_id: str, user_id: str, username: str):
-    """Record when a user joins VC"""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             """INSERT INTO vc_sessions (guild_id, user_id, username, join_time)
                VALUES (?, ?, ?, ?)
@@ -491,8 +538,7 @@ async def start_vc_session(guild_id: str, user_id: str, username: str):
 
 
 async def end_vc_session(guild_id: str, user_id: str) -> int:
-    """End VC session and return minutes spent"""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "SELECT username, join_time FROM vc_sessions WHERE guild_id = ? AND user_id = ?",
             (guild_id, user_id)
@@ -508,14 +554,12 @@ async def end_vc_session(guild_id: str, user_id: str) -> int:
         
         minutes = int((datetime.now(timezone.utc) - join_dt).total_seconds() / 60)
         
-        # Delete session
         await conn.execute(
             "DELETE FROM vc_sessions WHERE guild_id = ? AND user_id = ?",
             (guild_id, user_id)
         )
         await conn.commit()
         
-        # Add minutes to activity
         if minutes > 0:
             await add_vc_minutes(guild_id, user_id, username, minutes)
         
@@ -523,8 +567,7 @@ async def end_vc_session(guild_id: str, user_id: str) -> int:
 
 
 async def get_all_vc_sessions(guild_id: str) -> list[dict]:
-    """Get all active VC sessions"""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "SELECT user_id, username, join_time FROM vc_sessions WHERE guild_id = ?",
             (guild_id,)
@@ -536,7 +579,7 @@ async def get_all_vc_sessions(guild_id: str) -> list[dict]:
 # ==================== ACTIVE CHIP DROP ====================
 
 async def create_chip_drop(guild_id: str, channel_id: str, message_id: str, amount: int, drop_type: str, answer: str = ""):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             """INSERT INTO active_chip_drop (guild_id, channel_id, message_id, amount, drop_type, answer, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -550,7 +593,7 @@ async def create_chip_drop(guild_id: str, channel_id: str, message_id: str, amou
 
 
 async def get_chip_drop(guild_id: str) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "SELECT channel_id, message_id, amount, drop_type, answer, created_at FROM active_chip_drop WHERE guild_id = ?",
             (guild_id,)
@@ -569,7 +612,7 @@ async def get_chip_drop(guild_id: str) -> dict | None:
 
 
 async def delete_chip_drop(guild_id: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "DELETE FROM active_chip_drop WHERE guild_id = ?",
             (guild_id,)
