@@ -699,6 +699,13 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
+BOT_VERSION = "v1.42"
+
+
+@bot.tree.command(name="version", description="Check bot version (debug)")
+async def version_cmd(interaction: discord.Interaction):
+    await interaction.response.send_message(f"Bot version: **{BOT_VERSION}**", ephemeral=True)
+
 
 @bot.tree.command(name="balance", description="Check your chip balance 🥔")
 async def balance_cmd(interaction: discord.Interaction):
@@ -1075,7 +1082,7 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.41 - cleanup)")
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. ({BOT_VERSION})")
 
 
 @bot.event
