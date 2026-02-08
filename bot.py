@@ -100,9 +100,11 @@ async def post_warm(guild_id: str):
     """Post a warm question (WYR, Debates, or Button)."""
     channel_id = await db.get_channel(guild_id, "warm")
     if not channel_id:
+        print(f"[Warm] No channel set for guild {guild_id}")
         return
     channel = bot.get_channel(int(channel_id))
     if not channel:
+        print(f"[Warm] Could not find channel {channel_id}")
         return
 
     all_q = (
@@ -127,17 +129,20 @@ async def post_warm(guild_id: str):
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_warm")
+    print(f"[Warm] Ping role for guild {guild_id}: {ping_role_id}")
     content = f"<@&{ping_role_id}>" if ping_role_id else None
-    await channel.send(content=content, embed=embed)
+    await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
 
 
 async def post_chill(guild_id: str):
     """Post a chill question (Chill or Personality lifestyle)."""
     channel_id = await db.get_channel(guild_id, "chill")
     if not channel_id:
+        print(f"[Chill] No channel set for guild {guild_id}")
         return
     channel = bot.get_channel(int(channel_id))
     if not channel:
+        print(f"[Chill] Could not find channel {channel_id}")
         return
 
     all_q = (
@@ -161,17 +166,20 @@ async def post_chill(guild_id: str):
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_chill")
+    print(f"[Chill] Ping role for guild {guild_id}: {ping_role_id}")
     content = f"<@&{ping_role_id}>" if ping_role_id else None
-    await channel.send(content=content, embed=embed)
+    await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
 
 
 async def post_typology(guild_id: str):
     """Post a typology question (Comparing types, Personal typology, or Friend group)."""
     channel_id = await db.get_channel(guild_id, "typology")
     if not channel_id:
+        print(f"[Typology] No channel set for guild {guild_id}")
         return
     channel = bot.get_channel(int(channel_id))
     if not channel:
+        print(f"[Typology] Could not find channel {channel_id}")
         return
 
     # Randomly select from typology sub-categories
@@ -202,8 +210,9 @@ async def post_typology(guild_id: str):
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_typology")
+    print(f"[Typology] Ping role for guild {guild_id}: {ping_role_id}")
     content = f"<@&{ping_role_id}>" if ping_role_id else None
-    await channel.send(content=content, embed=embed)
+    await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
 
 
 # Map question type → post function
@@ -699,7 +708,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.44"
+BOT_VERSION = "v1.45"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -938,8 +947,44 @@ async def viewschedule_cmd(interaction: discord.Interaction):
     now_utc = datetime.now(timezone.utc)
     now_manila = datetime.now(MANILA_TZ)
 
-    lines = ["**📅 Upcoming Schedule**", ""]
+    lines = ["**📅 Schedule & Status**", ""]
 
+    # --- Channel Status ---
+    lines.append("**📌 Channel Setup**")
+    channel_types = ["warm", "chill", "typology", "chip_drop", "chatter", "code_purple", "activity_rewards"]
+    channel_names = {
+        "warm": "🔥 Warm Questions",
+        "chill": "🌙 Chill Questions", 
+        "typology": "✨ Typology Questions",
+        "chip_drop": "🥔 Chip Drops",
+        "chatter": "💬 Chatter Rewards",
+        "code_purple": "💜 Code Purple",
+        "activity_rewards": "🏆 Activity Rewards",
+    }
+    for ctype in channel_types:
+        ch_id = await db.get_channel(gid, ctype)
+        if ch_id:
+            lines.append(f"✅ {channel_names[ctype]}: <#{ch_id}>")
+        else:
+            lines.append(f"❌ {channel_names[ctype]}: Not set")
+    
+    lines.append("")
+
+    # --- Ping Roles Status ---
+    lines.append("**🔔 Ping Roles**")
+    for qtype in ["warm", "chill", "typology"]:
+        role_id = await db.get_state(gid, f"ping_role_{qtype}")
+        qname = {"warm": "🔥 Warm", "chill": "🌙 Chill", "typology": "✨ Typology"}[qtype]
+        if role_id:
+            lines.append(f"✅ {qname}: <@&{role_id}>")
+        else:
+            lines.append(f"❌ {qname}: Not set")
+    
+    lines.append("")
+
+    # --- Upcoming Schedule ---
+    lines.append("**⏰ Upcoming Posts**")
+    
     # Daily questions — show next 3 in rotation
     next_q_iso = await db.get_state(gid, "next_daily_question")
     q_idx = int(await db.get_state(gid, "daily_question_index") or "0")
@@ -952,16 +997,18 @@ async def viewschedule_cmd(interaction: discord.Interaction):
         next_q = now_utc + timedelta(minutes=1)
 
     names = {
-        "typology": "✨ Typology Daily",
-        "casual": "💬 Casual Question",
-        "personality": "🧠 Personality Daily",
+        "warm": "🔥 Warm Question",
+        "chill": "🌙 Chill Question",
+        "typology": "✨ Typology Question",
     }
     for i in range(len(DAILY_QUESTION_ORDER)):
         idx = (q_idx + i) % len(DAILY_QUESTION_ORDER)
         qtype = DAILY_QUESTION_ORDER[idx]
         post_time = next_q + timedelta(hours=QUESTION_GAP_HOURS * i)
         ts = int(post_time.timestamp())
-        lines.append(f"⏰ **{names[qtype]}** <t:{ts}:R>")
+        ch_id = await db.get_channel(gid, qtype)
+        status = f"→ <#{ch_id}>" if ch_id else "→ ⚠️ No channel"
+        lines.append(f"{names[qtype]} <t:{ts}:R> {status}")
 
     lines.append("")
 
@@ -971,7 +1018,9 @@ async def viewschedule_cmd(interaction: discord.Interaction):
     if next_chatter <= now_manila:
         next_chatter += timedelta(days=1)
     ts = int(next_chatter.astimezone(timezone.utc).timestamp())
-    lines.append(f"⏰ **Chatter Rewards** <t:{ts}:R>")
+    ch_id = await db.get_channel(gid, "chatter")
+    status = f"→ <#{ch_id}>" if ch_id else "→ ⚠️ No channel"
+    lines.append(f"💬 Chatter Rewards <t:{ts}:R> {status}")
 
     # Activity rewards
     act_sched = config.ACTIVITY_REWARDS
@@ -979,13 +1028,15 @@ async def viewschedule_cmd(interaction: discord.Interaction):
     if next_activity <= now_manila:
         next_activity += timedelta(days=1)
     ts = int(next_activity.astimezone(timezone.utc).timestamp())
-    lines.append(f"⏰ **Activity Rewards** <t:{ts}:R>")
+    ch_id = await db.get_channel(gid, "activity_rewards")
+    status = f"→ <#{ch_id}>" if ch_id else "→ ⚠️ No channel"
+    lines.append(f"🏆 Activity Rewards <t:{ts}:R> {status}")
 
     lines.append("")
-    lines.append(f"💜 **Code Purple Check** every hour")
-    lines.append(f"🥔 **Chip Drops** {config.CHIP_DROP['min_delay']}-{config.CHIP_DROP['max_delay']}m after activity")
+    lines.append(f"💜 Code Purple: Checks every hour")
+    lines.append(f"🥔 Chip Drops: {config.CHIP_DROP['min_delay']}-{config.CHIP_DROP['max_delay']}m after activity")
     lines.append("")
-    lines.append(f"*Question gap: {QUESTION_GAP_HOURS:.0f}h • {len(DAILY_QUESTION_ORDER)} daily questions*")
+    lines.append(f"*Question gap: {QUESTION_GAP_HOURS:.0f}h • {len(DAILY_QUESTION_ORDER)} daily types*")
 
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
