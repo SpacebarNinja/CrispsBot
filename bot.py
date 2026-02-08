@@ -869,7 +869,7 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.1)")
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.2)")
 
 
 @bot.event
@@ -882,10 +882,12 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 
     gid = str(payload.guild_id)
     picker_msg_id = await db.get_state(gid, "role_picker_message")
+    print(f"[DEBUG] Reaction add: msg={payload.message_id}, stored={picker_msg_id}")
     if not picker_msg_id or str(payload.message_id) != picker_msg_id:
         return
 
     role_id = await db.get_state(gid, "ping_role")
+    print(f"[DEBUG] Role ID from DB: {role_id}")
     if not role_id:
         return
 
@@ -901,10 +903,12 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 
     role = guild.get_role(int(role_id))
     if not role:
+        print(f"[DEBUG] Role not found: {role_id}")
         return
 
     try:
         await member.add_roles(role)
+        print(f"[DEBUG] Added role {role.name} to {member.display_name}")
     except Exception as e:
         print(f"Failed to add role: {e}")
 
