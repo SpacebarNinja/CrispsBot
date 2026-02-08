@@ -56,7 +56,6 @@ def _embed(title: str, description: str, color_key: str, footer: str = "", autho
         title=title,
         description=description,
         color=int(config.COLORS[color_key], 16),
-        timestamp=datetime.now(timezone.utc),
     )
     if footer:
         e.set_footer(text=footer)
@@ -124,8 +123,9 @@ async def post_warm(guild_id: str):
 
     embed = _embed(
         config.EMBEDS["warm"]["title"],
-        f"*{category}*\n\n{question}",
+        question,
         "warm",
+        footer=category,
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_warm")
@@ -161,8 +161,9 @@ async def post_chill(guild_id: str):
 
     embed = _embed(
         config.EMBEDS["chill"]["title"],
-        f"*{category}*\n\n{question}",
+        question,
         "chill",
+        footer=category,
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_chill")
@@ -193,20 +194,24 @@ async def post_typology(guild_id: str):
             type2 = f"{random.choice(config.MBTI_TYPES)} {random.choice(config.ENNEAGRAM_TYPES)}"
         
         question_template = await get_unused_question(guild_id, "typology_comparing", config.TYPOLOGY_QUESTIONS)
-        description = f"*Comparing Types*\n\n**{type1}** or **{type2}**\n\n{question_template}"
+        description = f"**{type1}** or **{type2}**\n\n{question_template}"
+        footer_text = "Comparing Types"
     elif category == "personal":
         # Personal typology nerd question
         question = await get_unused_question(guild_id, "typology_personal", config.PERSONAL_TYPOLOGY_QUESTIONS)
-        description = f"*Personal Typology*\n\n{question}"
+        description = question
+        footer_text = "Personal Typology"
     else:
         # Friend group "most likely to" question
         question = await get_unused_question(guild_id, "typology_friendgroup", config.FRIEND_GROUP_QUESTIONS)
-        description = f"*Friend Group*\n\n{question}"
+        description = question
+        footer_text = "Friend Group"
     
     embed = _embed(
         config.EMBEDS["typology"]["title"],
         description,
         "typology",
+        footer=footer_text,
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_typology")
@@ -708,7 +713,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.46"
+BOT_VERSION = "v1.47"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
