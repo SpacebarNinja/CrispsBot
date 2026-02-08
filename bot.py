@@ -30,9 +30,9 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Daily question rotation: casual → personality → ...
-DAILY_QUESTION_ORDER = ["casual", "personality"]
-QUESTION_GAP_HOURS = 24 / len(DAILY_QUESTION_ORDER)  # 12 hours
+# Daily question rotation: warm → chill → typology → ...
+DAILY_QUESTION_ORDER = ["warm", "chill", "typology"]
+QUESTION_GAP_HOURS = 24 / len(DAILY_QUESTION_ORDER)  # 8 hours
 
 
 # ======================== HELPERS ========================
@@ -95,8 +95,9 @@ def format_story(words_str: str) -> str:
 # ======================== POSTING FUNCTIONS ========================
 
 
-async def post_casual(guild_id: str):
-    channel_id = await db.get_channel(guild_id, "casual")
+async def post_warm(guild_id: str):
+    """Post a warm question (WYR, Debates, or Button)."""
+    channel_id = await db.get_channel(guild_id, "warm")
     if not channel_id:
         return
     channel = bot.get_channel(int(channel_id))
@@ -106,73 +107,112 @@ async def post_casual(guild_id: str):
     all_q = (
         [(q, "Would You Rather") for q in config.SPARK_WYR]
         + [(q, "Debate Time") for q in config.SPARK_DEBATES]
-        + [(q, "Chill Vibes") for q in config.SPARK_CHILL]
+        + [(q, "Press The Button") for q in config.BUTTON_QUESTIONS]
     )
 
-    used = await db.get_used_questions(guild_id, "casual")
+    used = await db.get_used_questions(guild_id, "warm")
     if len(used) >= len(all_q):
-        await db.reset_questions(guild_id, "casual")
+        await db.reset_questions(guild_id, "warm")
         used = []
     available = [i for i in range(len(all_q)) if i not in used]
     idx = random.choice(available)
-    await db.mark_question_used(guild_id, "casual", idx)
+    await db.mark_question_used(guild_id, "warm", idx)
     question, category = all_q[idx]
 
     embed = _embed(
-        config.EMBEDS["casual"]["title"],
+        config.EMBEDS["warm"]["title"],
         f"*{category}*\n\n{question}",
-        "casual",
-        config.EMBEDS["casual"]["footer"],
+        "warm",
+        config.EMBEDS["warm"]["footer"],
     )
 
-    # Ping casual role
-    ping_role_id = await db.get_state(guild_id, "ping_role_casual")
+    ping_role_id = await db.get_state(guild_id, "ping_role_warm")
     content = f"<@&{ping_role_id}>" if ping_role_id else None
     await channel.send(content=content, embed=embed)
 
 
-async def post_personality(guild_id: str):
-    channel_id = await db.get_channel(guild_id, "personality")
+async def post_chill(guild_id: str):
+    """Post a chill question (Chill or Personality lifestyle)."""
+    channel_id = await db.get_channel(guild_id, "chill")
     if not channel_id:
         return
     channel = bot.get_channel(int(channel_id))
     if not channel:
         return
 
-    # Randomly select from personality sub-categories
-    category = random.choice(["lifestyle", "typology"])
+    all_q = (
+        [(q, "Chill Vibes") for q in config.SPARK_CHILL]
+        + [(q, "Lifestyle") for q in config.PERSONALITY_QUESTIONS]
+    )
+
+    used = await db.get_used_questions(guild_id, "chill")
+    if len(used) >= len(all_q):
+        await db.reset_questions(guild_id, "chill")
+        used = []
+    available = [i for i in range(len(all_q)) if i not in used]
+    idx = random.choice(available)
+    await db.mark_question_used(guild_id, "chill", idx)
+    question, category = all_q[idx]
+
+    embed = _embed(
+        config.EMBEDS["chill"]["title"],
+        f"*{category}*\n\n{question}",
+        "chill",
+        config.EMBEDS["chill"]["footer"],
+    )
+
+    ping_role_id = await db.get_state(guild_id, "ping_role_chill")
+    content = f"<@&{ping_role_id}>" if ping_role_id else None
+    await channel.send(content=content, embed=embed)
+
+
+async def post_typology(guild_id: str):
+    """Post a typology question (Comparing types, Personal typology, or Friend group)."""
+    channel_id = await db.get_channel(guild_id, "typology")
+    if not channel_id:
+        return
+    channel = bot.get_channel(int(channel_id))
+    if not channel:
+        return
+
+    # Randomly select from typology sub-categories
+    category = random.choice(["comparing", "personal", "friendgroup"])
     
-    if category == "typology":
-        # Generate typology comparison question
+    if category == "comparing":
+        # Generate MBTI x Enneagram comparison question
         type1 = f"{random.choice(config.MBTI_TYPES)} {random.choice(config.ENNEAGRAM_TYPES)}"
         type2 = type1
         while type2 == type1:
             type2 = f"{random.choice(config.MBTI_TYPES)} {random.choice(config.ENNEAGRAM_TYPES)}"
         
-        question_template = await get_unused_question(guild_id, "personality_typology", config.TYPOLOGY_QUESTIONS)
-        description = f"**{type1}** or **{type2}**\n\n{question_template}"
+        question_template = await get_unused_question(guild_id, "typology_comparing", config.TYPOLOGY_QUESTIONS)
+        description = f"*Comparing Types*\n\n**{type1}** or **{type2}**\n\n{question_template}"
+    elif category == "personal":
+        # Personal typology nerd question
+        question = await get_unused_question(guild_id, "typology_personal", config.PERSONAL_TYPOLOGY_QUESTIONS)
+        description = f"*Personal Typology*\n\n{question}"
     else:
-        # Lifestyle personality question
-        question = await get_unused_question(guild_id, "personality_lifestyle", config.PERSONALITY_QUESTIONS)
-        description = question
+        # Friend group "most likely to" question
+        question = await get_unused_question(guild_id, "typology_friendgroup", config.FRIEND_GROUP_QUESTIONS)
+        description = f"*Friend Group*\n\n{question}"
     
     embed = _embed(
-        config.EMBEDS["personality"]["title"],
+        config.EMBEDS["typology"]["title"],
         description,
-        "personality",
-        config.EMBEDS["personality"]["footer"],
+        "typology",
+        config.EMBEDS["typology"]["footer"],
     )
 
-    # Ping personality role
-    ping_role_id = await db.get_state(guild_id, "ping_role_personality")
+    ping_role_id = await db.get_state(guild_id, "ping_role_typology")
     content = f"<@&{ping_role_id}>" if ping_role_id else None
     await channel.send(content=content, embed=embed)
 
 
 # Map question type → post function
 QUESTION_POST_FNS = {
-    "casual": post_casual,
-    "personality": post_personality,
+    "warm": post_warm,
+    "chill": post_chill,
+    "typology": post_typology,
 }
 
 
@@ -594,9 +634,9 @@ async def forcedrop_cmd(interaction: discord.Interaction):
 @app_commands.describe(type="Type of question to post")
 @app_commands.choices(
     type=[
-        app_commands.Choice(name="Typology Daily", value="typology"),
-        app_commands.Choice(name="Casual Question Daily", value="casual"),
-        app_commands.Choice(name="Personality Daily", value="personality"),
+        app_commands.Choice(name="Warm Questions", value="warm"),
+        app_commands.Choice(name="Chill Questions", value="chill"),
+        app_commands.Choice(name="Typology Questions", value="typology"),
     ]
 )
 async def forcequestion_cmd(interaction: discord.Interaction, type: app_commands.Choice[str]):
@@ -672,9 +712,9 @@ async def stats_cmd(interaction: discord.Interaction):
 @app_commands.describe(feature="Feature to configure", channel="Channel (defaults to current)")
 @app_commands.choices(
     feature=[
-        app_commands.Choice(name="Typology Daily", value="typology"),
-        app_commands.Choice(name="Casual Question Daily", value="casual"),
-        app_commands.Choice(name="Personality Daily", value="personality"),
+        app_commands.Choice(name="Warm Questions", value="warm"),
+        app_commands.Choice(name="Chill Questions", value="chill"),
+        app_commands.Choice(name="Typology Questions", value="typology"),
         app_commands.Choice(name="Code Purple", value="codepurple"),
         app_commands.Choice(name="Chip Drops", value="chipdrop"),
         app_commands.Choice(name="Word Game", value="wordgame"),
@@ -808,8 +848,9 @@ async def resettimer_cmd(interaction: discord.Interaction, feature: app_commands
 # ---------- Ping Role ----------
 
 QUESTION_FEATURE_NAMES = {
-    "casual": "💬 Casual Question Daily",
-    "personality": "🧠 Personality Daily",
+    "warm": "🔥 Warm Questions",
+    "chill": "🌙 Chill Questions",
+    "typology": "✨ Typology Questions",
 }
 
 
@@ -818,8 +859,9 @@ QUESTION_FEATURE_NAMES = {
 @app_commands.describe(feature="Which daily question type", role="The role to ping")
 @app_commands.choices(
     feature=[
-        app_commands.Choice(name="Casual Question Daily", value="casual"),
-        app_commands.Choice(name="Personality Daily", value="personality"),
+        app_commands.Choice(name="Warm Questions", value="warm"),
+        app_commands.Choice(name="Chill Questions", value="chill"),
+        app_commands.Choice(name="Typology Questions", value="typology"),
     ]
 )
 async def setpingrole_cmd(interaction: discord.Interaction, feature: app_commands.Choice[str], role: discord.Role):
@@ -833,8 +875,9 @@ async def setpingrole_cmd(interaction: discord.Interaction, feature: app_command
 @app_commands.describe(feature="Which daily question type")
 @app_commands.choices(
     feature=[
-        app_commands.Choice(name="Casual Question Daily", value="casual"),
-        app_commands.Choice(name="Personality Daily", value="personality"),
+        app_commands.Choice(name="Warm Questions", value="warm"),
+        app_commands.Choice(name="Chill Questions", value="chill"),
+        app_commands.Choice(name="Typology Questions", value="typology"),
     ]
 )
 async def placepingrolepicker_cmd(interaction: discord.Interaction, feature: app_commands.Choice[str]):
@@ -878,7 +921,7 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v2.1 - rephrased personality questions)")
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.3 - warm/chill/typology)")
 
 
 @bot.event
@@ -893,7 +936,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     
     # Check all feature pickers
     matched_feature = None
-    for feature in ["casual", "personality"]:
+    for feature in ["warm", "chill", "typology"]:
         picker_msg_id = await db.get_state(gid, f"role_picker_message_{feature}")
         if picker_msg_id and str(payload.message_id) == picker_msg_id:
             matched_feature = feature
@@ -937,7 +980,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     
     # Check all feature pickers
     matched_feature = None
-    for feature in ["casual", "personality"]:
+    for feature in ["warm", "chill", "typology"]:
         picker_msg_id = await db.get_state(gid, f"role_picker_message_{feature}")
         if picker_msg_id and str(payload.message_id) == picker_msg_id:
             matched_feature = feature

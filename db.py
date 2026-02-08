@@ -59,23 +59,38 @@ async def init():
                 active INTEGER DEFAULT 0
             );
         """)
-        # Migration: rename spark → casual
+        # Migration: rename spark → casual (legacy v1.x)
         await conn.execute(
             "UPDATE bot_state SET key = 'channel_casual' WHERE key = 'channel_spark'"
         )
         await conn.execute(
             "UPDATE question_usage SET question_type = 'casual' WHERE question_type = 'spark'"
         )
-        # v2.0 migration: merge typology into personality
+        # v3.0 migration: restructure to warm/chill/typology
+        # casual → warm (WYR + Debates + Button)
         await conn.execute(
-            "UPDATE question_usage SET question_type = 'personality_typology' WHERE question_type = 'typology'"
+            "UPDATE bot_state SET key = 'channel_warm' WHERE key = 'channel_casual'"
         )
         await conn.execute(
-            "UPDATE question_usage SET question_type = 'personality_lifestyle' WHERE question_type = 'personality'"
+            "UPDATE bot_state SET key = 'ping_role_warm' WHERE key = 'ping_role_casual'"
         )
-        # Clean up old typology-specific state keys
         await conn.execute(
-            "DELETE FROM bot_state WHERE key LIKE '%typology%'"
+            "UPDATE bot_state SET key = 'role_picker_message_warm' WHERE key = 'role_picker_message_casual'"
+        )
+        # personality → chill (Chill + Lifestyle)
+        await conn.execute(
+            "UPDATE bot_state SET key = 'channel_chill' WHERE key = 'channel_personality'"
+        )
+        await conn.execute(
+            "UPDATE bot_state SET key = 'ping_role_chill' WHERE key = 'ping_role_personality'"
+        )
+        await conn.execute(
+            "UPDATE bot_state SET key = 'role_picker_message_chill' WHERE key = 'role_picker_message_personality'"
+        )
+        # typology channel stays as typology (it may already exist or need to be created)
+        # Clean up old question usage since categories changed
+        await conn.execute(
+            "DELETE FROM question_usage WHERE question_type IN ('casual', 'personality', 'personality_typology', 'personality_lifestyle', 'typology')"
         )
         await conn.commit()
 
