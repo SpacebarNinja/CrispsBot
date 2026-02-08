@@ -699,7 +699,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.43"
+BOT_VERSION = "v1.44"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -714,13 +714,13 @@ async def balance_cmd(interaction: discord.Interaction):
     rank = await db.get_rank(gid, uid)
 
     if bal == 0:
-        await interaction.response.send_message(config.MESSAGES["balance"]["no_balance"], ephemeral=True)
+        await interaction.response.send_message(config.MESSAGES["balance"]["no_balance"])
     else:
         rank_str = f"#{rank}" if rank else config.MESSAGES["balance"]["unranked"]
         msg = config.MESSAGES["balance"]["response"].format(
             amount=bal, emoji=config.CHIPS["emoji"], rank=rank_str
         )
-        await interaction.response.send_message(msg, ephemeral=True)
+        await interaction.response.send_message(msg)
 
 
 @bot.tree.command(name="chipleaderboard", description="View the server chip leaderboard 🏆")
@@ -1015,6 +1015,35 @@ async def resettimer_cmd(interaction: discord.Interaction, feature: app_commands
         await do_chip_drop(gid)
 
 
+@bot.tree.command(name="fastforward", description="Fast forward daily question timer (admin only)")
+@app_commands.default_permissions(administrator=True)
+async def fastforward_cmd(interaction: discord.Interaction):
+    gid = str(interaction.guild_id)
+    
+    next_q_iso = await db.get_state(gid, "next_daily_question")
+    if not next_q_iso:
+        await interaction.response.send_message("No question scheduled yet!", ephemeral=True)
+        return
+    
+    next_q = datetime.fromisoformat(next_q_iso)
+    if next_q.tzinfo is None:
+        next_q = next_q.replace(tzinfo=timezone.utc)
+    
+    # Fast forward by (gap - 3 seconds)
+    skip_time = timedelta(hours=QUESTION_GAP_HOURS) - timedelta(seconds=3)
+    new_time = next_q - skip_time
+    
+    await db.set_state(gid, "next_daily_question", new_time.isoformat())
+    
+    q_idx = int(await db.get_state(gid, "daily_question_index") or "0")
+    next_type = DAILY_QUESTION_ORDER[q_idx % len(DAILY_QUESTION_ORDER)]
+    
+    ts = int(new_time.timestamp())
+    await interaction.response.send_message(
+        f"⏩ Fast forwarded! **{next_type.title()}** question will post <t:{ts}:R>", ephemeral=True
+    )
+
+
 # ---------- Ping Role ----------
 
 QUESTION_FEATURE_NAMES = {
@@ -1103,41 +1132,48 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         return
 
     gid = str(payload.guild_id)
+    print(f"[ReactionRole] 👍 reaction detected from user {payload.user_id} on msg {payload.message_id}")
     
     # Check all feature pickers
     matched_feature = None
     for feature in ["warm", "chill", "typology"]:
         picker_msg_id = await db.get_state(gid, f"role_picker_message_{feature}")
+        print(f"[ReactionRole] Checking {feature}: stored={picker_msg_id}, payload={payload.message_id}")
         if picker_msg_id and str(payload.message_id) == picker_msg_id:
             matched_feature = feature
             break
     
     if not matched_feature:
+        print(f"[ReactionRole] No matching feature found for message {payload.message_id}")
         return
 
     role_id = await db.get_state(gid, f"ping_role_{matched_feature}")
     if not role_id:
+        print(f"[ReactionRole] No ping role set for {matched_feature}")
         return
 
     guild = bot.get_guild(payload.guild_id)
     if not guild:
+        print(f"[ReactionRole] Could not get guild {payload.guild_id}")
         return
     member = guild.get_member(payload.user_id)
     if not member:
         try:
             member = await guild.fetch_member(payload.user_id)
-        except Exception:
+        except Exception as e:
+            print(f"[ReactionRole] Could not fetch member {payload.user_id}: {e}")
             return
 
     role = guild.get_role(int(role_id))
     if not role:
+        print(f"[ReactionRole] Could not find role {role_id}")
         return
 
     try:
         await member.add_roles(role)
-        print(f"[Role] Added {role.name} to {member.display_name}")
+        print(f"[ReactionRole] ✅ Added {role.name} to {member.display_name}")
     except Exception as e:
-        print(f"Failed to add role: {e}")
+        print(f"[ReactionRole] ❌ Failed to add role: {e}")
 
 
 @bot.event
@@ -1214,17 +1250,14 @@ async def on_message(message: discord.Message):
             
             await db.add_chips(gid, str(message.author.id), message.author.display_name, amount)
             
-            # Edit original message to show claimed
+            # Reply to the winner's message
+            claimed_msg = random.choice(config.MESSAGES["chip_drop"]["claimed"]).format(
+                user=message.author.mention,
+                amount=amount,
+                emoji=emoji
+            )
             try:
-                drop_channel = bot.get_channel(int(drop["channel_id"]))
-                if drop_channel:
-                    drop_msg = await drop_channel.fetch_message(int(drop["message_id"]))
-                    claimed_msg = random.choice(config.MESSAGES["chip_drop"]["claimed"]).format(
-                        user=message.author.mention,
-                        amount=amount,
-                        emoji=emoji
-                    )
-                    await drop_msg.edit(content=f"~~{drop_msg.content}~~\n\n{claimed_msg}")
+                await message.reply(claimed_msg, mention_author=False)
             except Exception:
                 pass
             
