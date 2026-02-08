@@ -973,8 +973,17 @@ async def viewschedule_cmd(interaction: discord.Interaction):
     ts = int(next_chatter.astimezone(timezone.utc).timestamp())
     lines.append(f"⏰ **Chatter Rewards** <t:{ts}:R>")
 
+    # Activity rewards
+    act_sched = config.ACTIVITY_REWARDS
+    next_activity = now_manila.replace(hour=act_sched["hour"], minute=act_sched["minute"], second=0, microsecond=0)
+    if next_activity <= now_manila:
+        next_activity += timedelta(days=1)
+    ts = int(next_activity.astimezone(timezone.utc).timestamp())
+    lines.append(f"⏰ **Activity Rewards** <t:{ts}:R>")
+
+    lines.append("")
     lines.append(f"💜 **Code Purple Check** every hour")
-    lines.append(f"🥔 **Chip Drops** every {config.CHIP_DROP['min_interval']}-{config.CHIP_DROP['max_interval']}m")
+    lines.append(f"🥔 **Chip Drops** {config.CHIP_DROP['min_delay']}-{config.CHIP_DROP['max_delay']}m after activity")
     lines.append("")
     lines.append(f"*Question gap: {QUESTION_GAP_HOURS:.0f}h • {len(DAILY_QUESTION_ORDER)} daily questions*")
 

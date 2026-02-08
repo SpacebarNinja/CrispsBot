@@ -43,7 +43,7 @@ ACTIVITY_REWARDS = {
 }
 
 CODE_PURPLE = {
-    "inactivity_hours": 6,
+    "inactivity_hours": 4,
     "cooldown_hours": 24,
 }
 
