@@ -893,7 +893,7 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.6)")
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.7)")
 
 
 @bot.event
@@ -1016,10 +1016,9 @@ async def on_message(message: discord.Message):
             # Same person can't go twice in a row
             if game["last_contributor_id"] == str(message.author.id):
                 try:
-                    await message.delete()
                     await message.channel.send(
                         f"{message.author.mention} You can't add two words in a row! Let someone else go.",
-                        delete_after=3,
+                        delete_after=4,
                     )
                 except Exception:
                     pass
@@ -1028,13 +1027,7 @@ async def on_message(message: discord.Message):
                 await db.add_word(gid, word, str(message.author.id))
                 game = await db.get_word_game(gid)
 
-                # Delete user's message
-                try:
-                    await message.delete()
-                except Exception:
-                    pass
-
-                # Delete old bot message
+                # Delete old bot message (forward pattern)
                 try:
                     old_msg = await message.channel.fetch_message(int(game["message_id"]))
                     await old_msg.delete()
