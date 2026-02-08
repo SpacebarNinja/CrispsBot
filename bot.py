@@ -35,6 +35,32 @@ DAILY_QUESTION_ORDER = ["warm", "chill", "typology"]
 QUESTION_GAP_HOURS = 24 / len(DAILY_QUESTION_ORDER)  # 8 hours
 
 
+# ======================== HARDCODED CONFIG (Single Server) ========================
+# This bot is designed for a single server, so we hardcode all the IDs
+
+HARDCODED = {
+    # Ping roles
+    "ping_role_warm": "1470111504954032300",
+    "ping_role_chill": "1470111189869527131",
+    "ping_role_typology": "1470111535559999590",
+    
+    # Channels
+    "channel_warm": "1470111942696767548",      # #qotd
+    "channel_chill": "1470111942696767548",     # #qotd
+    "channel_typology": "1450418107368738848",  # #typology
+    "channel_codepurple": "1446277377771573402", # #general
+    "channel_activity_rewards": "1446277377771573402",  # #general
+    
+    # Reaction role picker message IDs
+    "role_picker_message_warm": "1470113538994606160",
+    "role_picker_message_chill": "1470113556476334182",
+    "role_picker_message_typology": "1470113576017723564",
+    
+    # Blacklist categories (all channels in these categories are blacklisted from chip drops)
+    "blacklist_categories": ["1446269291123966044", "1446277444372791458"],
+}
+
+
 # ======================== HELPERS ========================
 
 
@@ -97,10 +123,7 @@ def format_story(words_str: str) -> str:
 
 async def post_warm(guild_id: str):
     """Post a warm question (WYR, Debates, or Button)."""
-    channel_id = await db.get_channel(guild_id, "warm")
-    if not channel_id:
-        print(f"[Warm] No channel set for guild {guild_id}")
-        return
+    channel_id = HARDCODED["channel_warm"]
     channel = bot.get_channel(int(channel_id))
     if not channel:
         print(f"[Warm] Could not find channel {channel_id}")
@@ -133,18 +156,14 @@ async def post_warm(guild_id: str):
         footer=f"{category} (#{count})",
     )
 
-    ping_role_id = await db.get_state(guild_id, "ping_role_warm")
-    print(f"[Warm] Ping role for guild {guild_id}: {ping_role_id}")
-    content = f"<@&{ping_role_id}>" if ping_role_id else None
+    ping_role_id = HARDCODED["ping_role_warm"]
+    content = f"<@&{ping_role_id}>"
     await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
 
 
 async def post_chill(guild_id: str):
     """Post a chill question (Chill or Personality lifestyle)."""
-    channel_id = await db.get_channel(guild_id, "chill")
-    if not channel_id:
-        print(f"[Chill] No channel set for guild {guild_id}")
-        return
+    channel_id = HARDCODED["channel_chill"]
     channel = bot.get_channel(int(channel_id))
     if not channel:
         print(f"[Chill] Could not find channel {channel_id}")
@@ -176,18 +195,14 @@ async def post_chill(guild_id: str):
         footer=f"{category} (#{count})",
     )
 
-    ping_role_id = await db.get_state(guild_id, "ping_role_chill")
-    print(f"[Chill] Ping role for guild {guild_id}: {ping_role_id}")
-    content = f"<@&{ping_role_id}>" if ping_role_id else None
+    ping_role_id = HARDCODED["ping_role_chill"]
+    content = f"<@&{ping_role_id}>"
     await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
 
 
 async def post_typology(guild_id: str):
     """Post a typology question (Comparing types, Personal typology, or Friend group)."""
-    channel_id = await db.get_channel(guild_id, "typology")
-    if not channel_id:
-        print(f"[Typology] No channel set for guild {guild_id}")
-        return
+    channel_id = HARDCODED["channel_typology"]
     channel = bot.get_channel(int(channel_id))
     if not channel:
         print(f"[Typology] Could not find channel {channel_id}")
@@ -229,9 +244,8 @@ async def post_typology(guild_id: str):
         footer=f"{footer_text} (#{count})",
     )
 
-    ping_role_id = await db.get_state(guild_id, "ping_role_typology")
-    print(f"[Typology] Ping role for guild {guild_id}: {ping_role_id}")
-    content = f"<@&{ping_role_id}>" if ping_role_id else None
+    ping_role_id = HARDCODED["ping_role_typology"]
+    content = f"<@&{ping_role_id}>"
     await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
 
 
@@ -289,14 +303,14 @@ async def do_chip_drop(guild_id: str, channel_id: str = None):
         print(f"[ChipDrop] No channel available for guild {guild_id}")
         return
     
-    # Check if channel is blacklisted
-    if await db.is_channel_blacklisted(guild_id, channel_id):
-        print(f"[ChipDrop] Channel {channel_id} is blacklisted, skipping")
-        return
-    
     channel = bot.get_channel(int(channel_id))
     if not channel:
         print(f"[ChipDrop] Could not find channel {channel_id}")
+        return
+    
+    # Check if channel is in a blacklisted category
+    if channel.category_id and str(channel.category_id) in HARDCODED["blacklist_categories"]:
+        print(f"[ChipDrop] Channel {channel_id} is in blacklisted category, skipping")
         return
 
     # Check if there's already an active drop
@@ -738,7 +752,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.54"
+BOT_VERSION = "v1.55"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -908,105 +922,92 @@ async def stats_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="setchannel", description="Set a channel for bot features (admin only)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.describe(feature="Feature to configure", channel="Channel (defaults to current)")
-@app_commands.choices(
-    feature=[
-        app_commands.Choice(name="Warm Questions", value="warm"),
-        app_commands.Choice(name="Chill Questions", value="chill"),
-        app_commands.Choice(name="Typology Questions", value="typology"),
-        app_commands.Choice(name="Code Purple", value="codepurple"),
-        app_commands.Choice(name="Activity Rewards", value="activity_rewards"),
-        app_commands.Choice(name="Word Game", value="wordgame"),
-    ]
-)
-async def setchannel_cmd(
-    interaction: discord.Interaction,
-    feature: app_commands.Choice[str],
-    channel: discord.TextChannel = None,
-):
-    target = channel or interaction.channel
-    gid = str(interaction.guild_id)
-    await db.set_channel(gid, feature.value, str(target.id))
-
-    # If setting word game channel, always send "Start new story" embed
-    if feature.value == "wordgame":
-        await interaction.response.defer(ephemeral=True)
-        embed = discord.Embed(
-            title="📖 Word Game",
-            description="*Click the button below to start a new story!*",
-            color=int(config.WORD_GAME["embed"]["color"], 16),
-        )
-        embed.set_footer(text="One word per message • Punctuation auto-formats")
-        view = WordGameStartView()
-        await target.send(embed=embed, view=view)
-        await interaction.followup.send(f"{feature.name} channel set to {target.mention}", ephemeral=True)
-    else:
-        await interaction.response.send_message(f"{feature.name} channel set to {target.mention}", ephemeral=True)
+# COMMENTED OUT - Using hardcoded channels (v1.55)
+# @bot.tree.command(name="setchannel", description="Set a channel for bot features (admin only)")
+# @app_commands.default_permissions(administrator=True)
+# @app_commands.describe(feature="Feature to configure", channel="Channel (defaults to current)")
+# @app_commands.choices(
+#     feature=[
+#         app_commands.Choice(name="Warm Questions", value="warm"),
+#         app_commands.Choice(name="Chill Questions", value="chill"),
+#         app_commands.Choice(name="Typology Questions", value="typology"),
+#         app_commands.Choice(name="Code Purple", value="codepurple"),
+#         app_commands.Choice(name="Activity Rewards", value="activity_rewards"),
+#         app_commands.Choice(name="Word Game", value="wordgame"),
+#     ]
+# )
+# async def setchannel_cmd(
+#     interaction: discord.Interaction,
+#     feature: app_commands.Choice[str],
+#     channel: discord.TextChannel = None,
+# ):
+#     target = channel or interaction.channel
+#     gid = str(interaction.guild_id)
+#     await db.set_channel(gid, feature.value, str(target.id))
+#
+#     # If setting word game channel, always send "Start new story" embed
+#     if feature.value == "wordgame":
+#         await interaction.response.defer(ephemeral=True)
+#         embed = discord.Embed(
+#             title="📖 Word Game",
+#             description="*Click the button below to start a new story!*",
+#             color=int(config.WORD_GAME["embed"]["color"], 16),
+#         )
+#         embed.set_footer(text="One word per message • Punctuation auto-formats")
+#         view = WordGameStartView()
+#         await target.send(embed=embed, view=view)
+#         await interaction.followup.send(f"{feature.name} channel set to {target.mention}", ephemeral=True)
+#     else:
+#         await interaction.response.send_message(f"{feature.name} channel set to {target.mention}", ephemeral=True)
 
 
 @bot.tree.command(name="viewchannels", description="View current channel settings (admin only)")
 @app_commands.default_permissions(administrator=True)
 async def viewchannels_cmd(interaction: discord.Interaction):
-    gid = str(interaction.guild_id)
-    channels = await db.get_all_channels(gid)
-
-    features = {
-        "warm": "🔥 Warm Questions",
-        "chill": "🌙 Chill Questions",
-        "typology": "✨ Typology Questions",
-        "codepurple": "💜 Code Purple",
-        "activity_rewards": "🏆 Activity Rewards",
-        "wordgame": "📖 Word Game",
-    }
-
-    lines = ["**Current Channel Settings:**", ""]
-    for key, name in features.items():
-        ch = channels.get(key)
-        lines.append(f"{name}: {f'<#{ch}>' if ch else '*not set*'}")
-    
-    # Chip drops note
+    lines = ["**Current Channel Settings (Hardcoded):**", ""]
+    lines.append(f"🔥 Warm Questions: <#{HARDCODED['channel_warm']}>")
+    lines.append(f"🌙 Chill Questions: <#{HARDCODED['channel_chill']}>")
+    lines.append(f"✨ Typology Questions: <#{HARDCODED['channel_typology']}>")
+    lines.append(f"💜 Code Purple: <#{HARDCODED['channel_codepurple']}>")
+    lines.append(f"🏆 Activity Rewards: <#{HARDCODED['channel_activity_rewards']}>")
+    lines.append("📖 Word Game: *uses database*")
     lines.append("🥔 Chip Drops: *Drops in active channels*")
     
-    # Blacklisted channels
-    blacklist = await db.get_blacklisted_channels(gid)
+    # Blacklisted categories
     lines.append("")
-    if blacklist:
-        lines.append("**🚫 Chip Drop Blacklist:**")
-        for ch_id in blacklist:
-            lines.append(f"• <#{ch_id}>")
-    else:
-        lines.append("*No channels blacklisted for chip drops*")
+    lines.append("**🚫 Chip Drop Blacklist (by category):**")
+    for cat_id in HARDCODED["blacklist_categories"]:
+        lines.append(f"• Category ID: {cat_id}")
     
     lines.append("")
-    lines.append("*Use `/setchannel` to configure, `/blacklistchannel` to blacklist*")
+    lines.append("*Config is hardcoded in bot.py*")
 
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
 
-@bot.tree.command(name="blacklistchannel", description="Blacklist a channel from chip drops (admin only)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.describe(channel="Channel to blacklist")
-async def blacklistchannel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
-    gid = str(interaction.guild_id)
-    added = await db.add_blacklisted_channel(gid, str(channel.id))
-    if added:
-        await interaction.response.send_message(f"✅ {channel.mention} blacklisted from chip drops", ephemeral=True)
-    else:
-        await interaction.response.send_message(f"⚠️ {channel.mention} is already blacklisted", ephemeral=True)
-
-
-@bot.tree.command(name="unblacklistchannel", description="Remove a channel from chip drop blacklist (admin only)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.describe(channel="Channel to unblacklist")
-async def unblacklistchannel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
-    gid = str(interaction.guild_id)
-    removed = await db.remove_blacklisted_channel(gid, str(channel.id))
-    if removed:
-        await interaction.response.send_message(f"✅ {channel.mention} removed from blacklist", ephemeral=True)
-    else:
-        await interaction.response.send_message(f"⚠️ {channel.mention} wasn't blacklisted", ephemeral=True)
+# COMMENTED OUT - Using hardcoded category blacklist (v1.55)
+# @bot.tree.command(name="blacklistchannel", description="Blacklist a channel from chip drops (admin only)")
+# @app_commands.default_permissions(administrator=True)
+# @app_commands.describe(channel="Channel to blacklist")
+# async def blacklistchannel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
+#     gid = str(interaction.guild_id)
+#     added = await db.add_blacklisted_channel(gid, str(channel.id))
+#     if added:
+#         await interaction.response.send_message(f"✅ {channel.mention} blacklisted from chip drops", ephemeral=True)
+#     else:
+#         await interaction.response.send_message(f"⚠️ {channel.mention} is already blacklisted", ephemeral=True)
+#
+#
+# @bot.tree.command(name="unblacklistchannel", description="Remove a channel from chip drop blacklist (admin only)")
+# @app_commands.default_permissions(administrator=True)
+# @app_commands.describe(channel="Channel to unblacklist")
+# async def unblacklistchannel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
+#     gid = str(interaction.guild_id)
+#     removed = await db.remove_blacklisted_channel(gid, str(channel.id))
+#     if removed:
+#         await interaction.response.send_message(f"✅ {channel.mention} removed from blacklist", ephemeral=True)
+#     else:
+#         await interaction.response.send_message(f"⚠️ {channel.mention} wasn't blacklisted", ephemeral=True)
 
 
 @bot.tree.command(name="viewschedule", description="View upcoming scheduled posts (admin only)")
@@ -1163,66 +1164,67 @@ QUESTION_FEATURE_NAMES = {
 }
 
 
-@bot.tree.command(name="setpingrole", description="Set the role to ping for a daily question type (admin only)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.describe(feature="Which daily question type", role="The role to ping")
-@app_commands.choices(
-    feature=[
-        app_commands.Choice(name="Warm Questions", value="warm"),
-        app_commands.Choice(name="Chill Questions", value="chill"),
-        app_commands.Choice(name="Typology Questions", value="typology"),
-    ]
-)
-async def setpingrole_cmd(interaction: discord.Interaction, feature: app_commands.Choice[str], role: discord.Role):
-    gid = str(interaction.guild_id)
-    await db.set_state(gid, f"ping_role_{feature.value}", str(role.id))
-    await interaction.response.send_message(f"{feature.name} ping role set to {role.mention}", ephemeral=True)
-
-
-@bot.tree.command(name="placepingrolepicker", description="Post a reaction role picker for a daily question type (admin only)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.describe(feature="Which daily question type")
-@app_commands.choices(
-    feature=[
-        app_commands.Choice(name="Warm Questions", value="warm"),
-        app_commands.Choice(name="Chill Questions", value="chill"),
-        app_commands.Choice(name="Typology Questions", value="typology"),
-    ]
-)
-async def placepingrolepicker_cmd(interaction: discord.Interaction, feature: app_commands.Choice[str]):
-    gid = str(interaction.guild_id)
-    role_id = await db.get_state(gid, f"ping_role_{feature.value}")
-    if not role_id:
-        await interaction.response.send_message(
-            f"No ping role set for {feature.name}! Use `/setpingrole {feature.value}` first.", ephemeral=True
-        )
-        return
-
-    feature_name = QUESTION_FEATURE_NAMES[feature.value]
-    
-    # Feature descriptions
-    feature_descriptions = {
-        "warm": "Would You Rather, debates, and Press the Button questions",
-        "chill": "Chill vibes and lifestyle-related questions",
-        "typology": "Typology-related questions, comparing types, and friend group questions",
-    }
-    
-    # Remove emoji from feature name for description text
-    feature_name_no_emoji = feature_name.split(" ", 1)[1]  # Remove first word (emoji)
-    description_text = feature_descriptions.get(feature.value, "")
-    
-    embed = discord.Embed(
-        title=f"🔔 {feature_name} Notifications",
-        description=f"React with 👍 to get the <@&{role_id}> role and be pinged for {feature_name_no_emoji}\n\n**Includes:** {description_text}",
-        color=int(config.COLORS[feature.value], 16),
-    )
-    embed.set_footer(text="Unreact to remove the role.")
-
-    await interaction.response.defer(ephemeral=True)
-    msg = await interaction.channel.send(embed=embed)
-    await msg.add_reaction("👍")
-    await db.set_state(gid, f"role_picker_message_{feature.value}", str(msg.id))
-    await interaction.followup.send(f"{feature.name} role picker posted! ✅", ephemeral=True)
+# COMMENTED OUT - Using hardcoded ping roles and role picker messages (v1.55)
+# @bot.tree.command(name="setpingrole", description="Set the role to ping for a daily question type (admin only)")
+# @app_commands.default_permissions(administrator=True)
+# @app_commands.describe(feature="Which daily question type", role="The role to ping")
+# @app_commands.choices(
+#     feature=[
+#         app_commands.Choice(name="Warm Questions", value="warm"),
+#         app_commands.Choice(name="Chill Questions", value="chill"),
+#         app_commands.Choice(name="Typology Questions", value="typology"),
+#     ]
+# )
+# async def setpingrole_cmd(interaction: discord.Interaction, feature: app_commands.Choice[str], role: discord.Role):
+#     gid = str(interaction.guild_id)
+#     await db.set_state(gid, f"ping_role_{feature.value}", str(role.id))
+#     await interaction.response.send_message(f"{feature.name} ping role set to {role.mention}", ephemeral=True)
+#
+#
+# @bot.tree.command(name="placepingrolepicker", description="Post a reaction role picker for a daily question type (admin only)")
+# @app_commands.default_permissions(administrator=True)
+# @app_commands.describe(feature="Which daily question type")
+# @app_commands.choices(
+#     feature=[
+#         app_commands.Choice(name="Warm Questions", value="warm"),
+#         app_commands.Choice(name="Chill Questions", value="chill"),
+#         app_commands.Choice(name="Typology Questions", value="typology"),
+#     ]
+# )
+# async def placepingrolepicker_cmd(interaction: discord.Interaction, feature: app_commands.Choice[str]):
+#     gid = str(interaction.guild_id)
+#     role_id = await db.get_state(gid, f"ping_role_{feature.value}")
+#     if not role_id:
+#         await interaction.response.send_message(
+#             f"No ping role set for {feature.name}! Use `/setpingrole {feature.value}` first.", ephemeral=True
+#         )
+#         return
+#
+#     feature_name = QUESTION_FEATURE_NAMES[feature.value]
+#     
+#     # Feature descriptions
+#     feature_descriptions = {
+#         "warm": "Would You Rather, debates, and Press the Button questions",
+#         "chill": "Chill vibes and lifestyle-related questions",
+#         "typology": "Typology-related questions, comparing types, and friend group questions",
+#     }
+#     
+#     # Remove emoji from feature name for description text
+#     feature_name_no_emoji = feature_name.split(" ", 1)[1]  # Remove first word (emoji)
+#     description_text = feature_descriptions.get(feature.value, "")
+#     
+#     embed = discord.Embed(
+#         title=f"🔔 {feature_name} Notifications",
+#         description=f"React with 👍 to get the <@&{role_id}> role and be pinged for {feature_name_no_emoji}\n\n**Includes:** {description_text}",
+#         color=int(config.COLORS[feature.value], 16),
+#     )
+#     embed.set_footer(text="Unreact to remove the role.")
+#
+#     await interaction.response.defer(ephemeral=True)
+#     msg = await interaction.channel.send(embed=embed)
+#     await msg.add_reaction("👍")
+#     await db.set_state(gid, f"role_picker_message_{feature.value}", str(msg.id))
+#     await interaction.followup.send(f"{feature.name} role picker posted! ✅", ephemeral=True)
 
 
 # ======================== EVENTS ========================
@@ -1250,42 +1252,31 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     if str(payload.emoji) != "👍":
         return
 
-    gid = str(payload.guild_id)
-    print(f"[ReactionRole] 👍 reaction detected from user {payload.user_id} on msg {payload.message_id}")
-    
-    # Check all feature pickers
+    # Check all feature pickers using hardcoded message IDs
     matched_feature = None
+    msg_id = str(payload.message_id)
     for feature in ["warm", "chill", "typology"]:
-        picker_msg_id = await db.get_state(gid, f"role_picker_message_{feature}")
-        print(f"[ReactionRole] Checking {feature}: stored={picker_msg_id}, payload={payload.message_id}")
-        if picker_msg_id and str(payload.message_id) == picker_msg_id:
+        if msg_id == HARDCODED[f"role_picker_message_{feature}"]:
             matched_feature = feature
             break
     
     if not matched_feature:
-        print(f"[ReactionRole] No matching feature found for message {payload.message_id}")
         return
 
-    role_id = await db.get_state(gid, f"ping_role_{matched_feature}")
-    if not role_id:
-        print(f"[ReactionRole] No ping role set for {matched_feature}")
-        return
+    role_id = HARDCODED[f"ping_role_{matched_feature}"]
 
     guild = bot.get_guild(payload.guild_id)
     if not guild:
-        print(f"[ReactionRole] Could not get guild {payload.guild_id}")
         return
     member = guild.get_member(payload.user_id)
     if not member:
         try:
             member = await guild.fetch_member(payload.user_id)
-        except Exception as e:
-            print(f"[ReactionRole] Could not fetch member {payload.user_id}: {e}")
+        except Exception:
             return
 
     role = guild.get_role(int(role_id))
     if not role:
-        print(f"[ReactionRole] Could not find role {role_id}")
         return
 
     try:
@@ -1301,22 +1292,18 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     if str(payload.emoji) != "👍":
         return
 
-    gid = str(payload.guild_id)
-    
-    # Check all feature pickers
+    # Check all feature pickers using hardcoded message IDs
     matched_feature = None
+    msg_id = str(payload.message_id)
     for feature in ["warm", "chill", "typology"]:
-        picker_msg_id = await db.get_state(gid, f"role_picker_message_{feature}")
-        if picker_msg_id and str(payload.message_id) == picker_msg_id:
+        if msg_id == HARDCODED[f"role_picker_message_{feature}"]:
             matched_feature = feature
             break
     
     if not matched_feature:
         return
 
-    role_id = await db.get_state(gid, f"ping_role_{matched_feature}")
-    if not role_id:
-        return
+    role_id = HARDCODED[f"ping_role_{matched_feature}"]
 
     guild = bot.get_guild(payload.guild_id)
     if not guild:
@@ -1334,9 +1321,9 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
 
     try:
         await member.remove_roles(role)
-        print(f"[Role] Removed {role.name} from {member.display_name}")
+        print(f"[ReactionRole] Removed {role.name} from {member.display_name}")
     except Exception as e:
-        print(f"Failed to remove role: {e}")
+        print(f"[ReactionRole] Failed to remove role: {e}")
 
 
 @bot.event
