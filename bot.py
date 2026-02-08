@@ -732,7 +732,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.52"
+BOT_VERSION = "v1.53"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1174,13 +1174,14 @@ async def placepingrolepicker_cmd(interaction: discord.Interaction, feature: app
         "chill": "Chill vibes and lifestyle-related questions",
         "typology": "Typology-related questions, comparing types, and friend group questions",
     }
-
     
+    # Remove emoji from feature name for description text
+    feature_name_no_emoji = feature_name.split(" ", 1)[1]  # Remove first word (emoji)
     description_text = feature_descriptions.get(feature.value, "")
     
     embed = discord.Embed(
         title=f"🔔 {feature_name} Notifications",
-        description=f"React with 👍 to get the <@&{role_id}> role and be pinged for {feature_name}!\n\n**Includes:** {description_text}",
+        description=f"React with 👍 to get the <@&{role_id}> role and be pinged for {feature_name_no_emoji}\n\n**Includes:** {description_text}",
         color=int(config.COLORS[feature.value], 16),
     )
     embed.set_footer(text="Unreact to remove the role.")
