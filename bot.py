@@ -732,7 +732,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.50"
+BOT_VERSION = "v1.51"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1170,10 +1170,11 @@ async def placepingrolepicker_cmd(interaction: discord.Interaction, feature: app
     
     # Feature descriptions
     feature_descriptions = {
-        "warm": "Would You Rather, Debates, and Press The Button questions",
-        "chill": "Chill Vibes and Lifestyle questions",
-        "typology": "MBTI/Enneagram comparisons, Personal Typology, and Friend Group questions",
+        "warm": "Would You Rather, debates, and Press the Button questions",
+        "chill": "Chill vibes and lifestyle-related questions",
+        "typology": "Typology-related questions, comparing types, and friend group questions",
     }
+
     
     description_text = feature_descriptions.get(feature.value, "")
     

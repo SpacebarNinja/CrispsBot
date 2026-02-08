@@ -1,20 +1,13 @@
 """
 Database layer - SQLite via aiosqlite
 All bot data stored locally in bot_data.db
-Uses Railway Volume for persistence when deployed
 """
 
 import aiosqlite
 import os
 from datetime import datetime, timezone
 
-# Use Railway Volume path if available, otherwise local
-if os.environ.get("RAILWAY_ENVIRONMENT"):
-    # Railway Volume mounted at /data
-    DB_PATH = "/data/bot_data.db"
-else:
-    # Local development
-    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_data.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_data.db")
 
 
 # ==================== INIT ====================
