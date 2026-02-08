@@ -732,7 +732,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.49"
+BOT_VERSION = "v1.50"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1167,9 +1167,19 @@ async def placepingrolepicker_cmd(interaction: discord.Interaction, feature: app
         return
 
     feature_name = QUESTION_FEATURE_NAMES[feature.value]
+    
+    # Feature descriptions
+    feature_descriptions = {
+        "warm": "Would You Rather, Debates, and Press The Button questions",
+        "chill": "Chill Vibes and Lifestyle questions",
+        "typology": "MBTI/Enneagram comparisons, Personal Typology, and Friend Group questions",
+    }
+    
+    description_text = feature_descriptions.get(feature.value, "")
+    
     embed = discord.Embed(
         title=f"🔔 {feature_name} Notifications",
-        description=f"React with 👍 to get the <@&{role_id}> role and be pinged for {feature_name}!\n\nUnreact to remove the role.",
+        description=f"React with 👍 to get the <@&{role_id}> role and be pinged for {feature_name}!\n\n**Includes:** {description_text}\n\nUnreact to remove the role.",
         color=int(config.COLORS[feature.value], 16),
     )
 
