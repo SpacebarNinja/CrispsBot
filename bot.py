@@ -50,6 +50,7 @@ HARDCODED = {
     "channel_typology": "1450418107368738848",  # #typology
     "channel_codepurple": "1446277377771573402", # #general
     "channel_activity_rewards": "1446277377771573402",  # #general
+    "channel_chatter_rewards": "1470204258992390164",   # #daily-reward
     
     # Reaction role picker message IDs
     "role_picker_message_warm": "1470113538994606160",
@@ -59,6 +60,11 @@ HARDCODED = {
     # Blacklist categories (all channels in these categories are blacklisted from chip drops)
     "blacklist_categories": ["1446269291123966044", "1446277444372791458"],
 }
+
+
+def fmt_num(n: int) -> str:
+    """Format number with comma separators: 1000000 -> 1,000,000"""
+    return f"{n:,}"
 
 
 # ======================== HELPERS ========================
@@ -326,13 +332,13 @@ async def do_chip_drop(guild_id: str, channel_id: str = None):
     if random.random() < config.CHIP_DROP["math_chance"]:
         equation, answer = generate_math_question()
         announcement = config.MESSAGES["chip_drop"]["math_announcement"].format(
-            equation=equation, amount=amount, emoji=emoji
+            equation=equation, amount=fmt_num(amount), emoji=emoji
         )
         drop_type = "math"
         answer_str = str(answer)
     else:
         announcement = config.MESSAGES["chip_drop"]["grab_announcement"].format(
-            amount=amount, emoji=emoji
+            amount=fmt_num(amount), emoji=emoji
         )
         drop_type = "grab"
         answer_str = ""
@@ -369,7 +375,7 @@ async def check_code_purple(guild_id: str):
     if not config.FEATURES.get("code_purple"):
         return
 
-    channel_id = await db.get_channel(guild_id, "codepurple")
+    channel_id = HARDCODED["channel_codepurple"]
     if not channel_id:
         return
 
@@ -403,7 +409,8 @@ async def check_code_purple(guild_id: str):
 
 
 async def do_chatter_rewards(guild_id: str):
-    channel_id = await db.get_channel(guild_id, "chipdrop")  # Post in chip drop channel
+    # Chatter rewards post to #daily-reward (no ping)
+    channel_id = HARDCODED["channel_chatter_rewards"]
     if not channel_id:
         return
     channel = bot.get_channel(int(channel_id))
@@ -413,8 +420,17 @@ async def do_chatter_rewards(guild_id: str):
     today = datetime.now(MANILA_TZ).date().isoformat()
     chatters = await db.get_top_chatters(guild_id, today)
     emoji = config.CHIPS["emoji"]
-    top_reward = config.CHIPS["rewards"]["top_chatter"]
-    second_reward = config.CHIPS["rewards"]["second_chatter"]
+    
+    rewards = [
+        config.CHIPS["rewards"]["top_chatter"],
+        config.CHIPS["rewards"]["second_chatter"],
+        config.CHIPS["rewards"]["third_chatter"],
+    ]
+    msg_templates = [
+        config.MESSAGES["chatter_reward"]["top_chatter"],
+        config.MESSAGES["chatter_reward"]["second_chatter"],
+        config.MESSAGES["chatter_reward"]["third_chatter"],
+    ]
 
     if not chatters:
         await channel.send(config.MESSAGES["chatter_reward"]["no_activity"])
@@ -423,28 +439,15 @@ async def do_chatter_rewards(guild_id: str):
 
     lines = [config.MESSAGES["chatter_reward"]["announcement"]]
 
-    if len(chatters) == 1 or (len(chatters) >= 2 and chatters[0]["user_id"] == chatters[1]["user_id"]):
-        user = chatters[0]
-        total = top_reward + second_reward if len(chatters) == 1 else top_reward
-        await db.add_chips(guild_id, user["user_id"], user["username"], total)
+    for i, user in enumerate(chatters):
+        if i >= 3:
+            break
+        await db.add_chips(guild_id, user["user_id"], user["username"], rewards[i])
         lines.append(
-            config.MESSAGES["chatter_reward"]["same_user"].format(
-                user=f"<@{user['user_id']}>", amount=total, emoji=emoji
-            )
-        )
-    else:
-        top = chatters[0]
-        await db.add_chips(guild_id, top["user_id"], top["username"], top_reward)
-        lines.append(
-            config.MESSAGES["chatter_reward"]["top_chatter"].format(
-                user=f"<@{top['user_id']}>", amount=top_reward, emoji=emoji
-            )
-        )
-        second = chatters[1]
-        await db.add_chips(guild_id, second["user_id"], second["username"], second_reward)
-        lines.append(
-            config.MESSAGES["chatter_reward"]["second_chatter"].format(
-                user=f"<@{second['user_id']}>", amount=second_reward, emoji=emoji
+            msg_templates[i].format(
+                user=f"<@{user['user_id']}>",
+                amount=fmt_num(rewards[i]),
+                emoji=emoji
             )
         )
 
@@ -455,7 +458,7 @@ async def do_chatter_rewards(guild_id: str):
 
 async def do_activity_rewards(guild_id: str):
     """Daily activity rewards: messages + VC time"""
-    channel_id = await db.get_channel(guild_id, "activity_rewards")
+    channel_id = HARDCODED["channel_activity_rewards"]
     if not channel_id:
         return
     channel = bot.get_channel(int(channel_id))
@@ -491,9 +494,9 @@ async def do_activity_rewards(guild_id: str):
         lines.append(
             msg_templates[i].format(
                 user=f"<@{user['user_id']}>",
-                amount=rewards[i],
+                amount=fmt_num(rewards[i]),
                 emoji=emoji,
-                points=user["total"]
+                points=fmt_num(user["total"])
             )
         )
 
@@ -765,7 +768,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.57"
+BOT_VERSION = "v1.59"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -784,7 +787,7 @@ async def balance_cmd(interaction: discord.Interaction):
     else:
         rank_str = f"#{rank}" if rank else config.MESSAGES["balance"]["unranked"]
         msg = config.MESSAGES["balance"]["response"].format(
-            amount=bal, emoji=config.CHIPS["emoji"], rank=rank_str
+            amount=fmt_num(bal), emoji=config.CHIPS["emoji"], rank=rank_str
         )
         await interaction.response.send_message(msg)
 
@@ -812,7 +815,7 @@ async def leaderboard_cmd(interaction: discord.Interaction):
                 emoji=emoji,
                 rank=i,
                 user=f"<@{entry['user_id']}>",
-                amount=entry["chips"],
+                amount=fmt_num(entry["chips"]),
                 currency=config.CHIPS["name"],
             )
         )
@@ -829,7 +832,7 @@ async def leaderboard_cmd(interaction: discord.Interaction):
         embed.add_field(
             name="Your Position",
             value=config.MESSAGES["leaderboard"]["your_position"].format(
-                rank=user_rank, amount=user_bal, currency=config.CHIPS["name"]
+                rank=user_rank, amount=fmt_num(user_bal), currency=config.CHIPS["name"]
             ),
         )
 
@@ -846,7 +849,7 @@ async def chips_cmd(interaction: discord.Interaction, user: discord.Member, amou
     gid = str(interaction.guild_id)
     await db.set_chips(gid, str(user.id), user.display_name, amount)
     await interaction.response.send_message(
-        f"Set {user.mention}'s chips to **{amount} {config.CHIPS['emoji']}**", ephemeral=True
+        f"Set {user.mention}'s chips to **{fmt_num(amount)} {config.CHIPS['emoji']}**", ephemeral=True
     )
 
 
@@ -872,7 +875,7 @@ async def forcequestion_cmd(interaction: discord.Interaction, type: app_commands
     fn = QUESTION_POST_FNS.get(type.value)
     if fn:
         await fn(gid)
-        ch = await db.get_channel(gid, type.value)
+        ch = HARDCODED.get(f"channel_{type.value}")
         await interaction.response.send_message(f"Posted {type.name} to <#{ch}>", ephemeral=True)
     else:
         await interaction.response.send_message(config.MESSAGES["errors"]["generic"], ephemeral=True)
@@ -882,10 +885,7 @@ async def forcequestion_cmd(interaction: discord.Interaction, type: app_commands
 @app_commands.default_permissions(administrator=True)
 async def codepurple_cmd(interaction: discord.Interaction):
     gid = str(interaction.guild_id)
-    channel_id = await db.get_channel(gid, "codepurple")
-    if not channel_id:
-        await interaction.response.send_message("No code purple channel set! Use `/setchannel`.", ephemeral=True)
-        return
+    channel_id = HARDCODED["channel_codepurple"]
     channel = bot.get_channel(int(channel_id))
     if not channel:
         await interaction.response.send_message("Channel not found!", ephemeral=True)
@@ -983,6 +983,7 @@ async def viewchannels_cmd(interaction: discord.Interaction):
     lines.append(f"✨ Typology Questions: <#{HARDCODED['channel_typology']}>")
     lines.append(f"💜 Code Purple: <#{HARDCODED['channel_codepurple']}>")
     lines.append(f"🏆 Activity Rewards: <#{HARDCODED['channel_activity_rewards']}>")
+    lines.append(f"💬 Chatter Rewards: <#{HARDCODED['channel_chatter_rewards']}>")
     lines.append("📖 Word Game: *uses database*")
     lines.append("🥔 Chip Drops: *Drops in active channels*")
     
@@ -1043,7 +1044,7 @@ async def viewschedule_cmd(interaction: discord.Interaction):
         "activity_rewards": "🏆 Activity Rewards",
     }
     for ctype in channel_types:
-        ch_id = await db.get_channel(gid, ctype)
+        ch_id = HARDCODED.get(f"channel_{ctype}")
         if ch_id:
             lines.append(f"✅ {channel_names[ctype]}: <#{ch_id}>")
         else:
@@ -1056,7 +1057,7 @@ async def viewschedule_cmd(interaction: discord.Interaction):
     # --- Ping Roles Status ---
     lines.append("**🔔 Ping Roles**")
     for qtype in ["warm", "chill", "typology"]:
-        role_id = await db.get_state(gid, f"ping_role_{qtype}")
+        role_id = HARDCODED.get(f"ping_role_{qtype}")
         qname = {"warm": "🔥 Warm", "chill": "🌙 Chill", "typology": "✨ Typology"}[qtype]
         if role_id:
             lines.append(f"✅ {qname}: <@&{role_id}>")
@@ -1089,7 +1090,7 @@ async def viewschedule_cmd(interaction: discord.Interaction):
         qtype = DAILY_QUESTION_ORDER[idx]
         post_time = next_q + timedelta(hours=QUESTION_GAP_HOURS * i)
         ts = int(post_time.timestamp())
-        ch_id = await db.get_channel(gid, qtype)
+        ch_id = HARDCODED.get(f"channel_{qtype}")
         status = f"→ <#{ch_id}>" if ch_id else "→ ⚠️ No channel"
         lines.append(f"{names[qtype]} <t:{ts}:R> {status}")
 
@@ -1101,7 +1102,7 @@ async def viewschedule_cmd(interaction: discord.Interaction):
     if next_activity <= now_manila:
         next_activity += timedelta(days=1)
     ts = int(next_activity.astimezone(timezone.utc).timestamp())
-    ch_id = await db.get_channel(gid, "activity_rewards")
+    ch_id = HARDCODED["channel_activity_rewards"]
     status = f"→ <#{ch_id}>" if ch_id else "→ ⚠️ No channel"
     lines.append(f"🏆 Activity Rewards <t:{ts}:R> {status}")
 
@@ -1393,7 +1394,7 @@ async def on_message(message: discord.Message):
             # Reply to the winner's message
             claimed_msg = random.choice(config.MESSAGES["chip_drop"]["claimed"]).format(
                 user=message.author.mention,
-                amount=amount,
+                amount=fmt_num(amount),
                 emoji=emoji
             )
             try:

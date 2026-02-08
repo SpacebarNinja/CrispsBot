@@ -280,7 +280,7 @@ async def get_top_chatters(guild_id: str, date: str) -> list[dict]:
         cursor = await conn.execute(
             """SELECT user_id, username, message_count FROM daily_chatter
                WHERE guild_id = ? AND date = ?
-               ORDER BY message_count DESC LIMIT 2""",
+               ORDER BY message_count DESC LIMIT 3""",
             (guild_id, date)
         )
         rows = await cursor.fetchall()

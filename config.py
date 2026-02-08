@@ -16,8 +16,9 @@ CHIPS = {
     "singular": "chip",
     "plural": "chips",
     "rewards": {
-        "top_chatter": 10,
-        "second_chatter": 5,
+        "top_chatter": 10000,
+        "second_chatter": 5000,
+        "third_chatter": 3000,
         "chip_drop": 10,
     },
 }
@@ -43,7 +44,7 @@ ACTIVITY_REWARDS = {
 }
 
 CODE_PURPLE = {
-    "inactivity_hours": 4,
+    "inactivity_hours": 7,
     "cooldown_hours": 24,
 }
 
@@ -131,10 +132,10 @@ MESSAGES = {
     ],
     "chatter_reward": {
         "announcement": "**Daily Chatter Rewards 💬**",
-        "top_chatter": "**{user}** talked the most today — **+{amount} {emoji}**",
-        "second_chatter": "**{user}** came second — **+{amount} {emoji}**",
+        "top_chatter": "🥇 **{user}** — **+{amount} {emoji}**",
+        "second_chatter": "🥈 **{user}** — **+{amount} {emoji}**",
+        "third_chatter": "🥉 **{user}** — **+{amount} {emoji}**",
         "no_activity": "Nobody chatted today. No rewards.",
-        "same_user": "**{user}** took both spots. **+{amount} {emoji}** total",
     },
     "balance": {
         "response": "You have **{amount} {emoji}** (ranked **{rank}**)",
@@ -741,15 +742,9 @@ SPARK_DEBATES = [
     "Is it pronounced 'GIF' or 'JIF'?",
     "Does pineapple belong on pizza?",
     "Is it better to have more time or more money?",
-    "Should toilet paper roll over or under?",
     "Do people change, or do they just become more themselves?",
-    "Is it acceptable to double text?",
     "Do experiences or possessions bring more happiness?",
     "Is social media improving or ruining communication?",
-    "Is talent natural or developed?",
-    "Is it okay to leave a read message unanswered?",
-    "Can money buy happiness?",
-    "Is love a choice or a feeling?",
     "Is it weird to go to a movie alone?",
     "Is it weird to talk to yourself?",
     "Is forgiveness for the giver or the receiver?",
