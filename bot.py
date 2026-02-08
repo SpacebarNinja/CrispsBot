@@ -893,7 +893,7 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.5)")
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.6)")
 
 
 @bot.event
@@ -1000,16 +1000,17 @@ async def on_message(message: discord.Message):
     game = await db.get_word_game(gid)
     if game and game["active"] and str(message.channel.id) == game["channel_id"]:
         word = message.content.strip()
+        print(f"[WordGame] Message from {message.author}: '{word}'")
 
         # Validate — single word/punctuation, not too long, no links/mentions
-        valid = (
-            word
-            and " " not in word
-            and len(word) <= 45
-            and not word.startswith("http")
-            and not word.startswith("<")
-            and re.match(r"^[\w''.,!?;:\-…\"]+$", word)
-        )
+        is_single_word = word and " " not in word and "\n" not in word
+        is_short = len(word) <= 45 if word else False
+        is_not_link = not word.startswith("http") if word else True
+        is_not_mention = not word.startswith("<") if word else True
+        is_word_chars = bool(re.match(r"^[\w''.,!?;:\-…\"\'\`]+$", word, re.UNICODE)) if word else False
+        
+        valid = is_single_word and is_short and is_not_link and is_not_mention and is_word_chars
+        print(f"[WordGame] Valid={valid} (single={is_single_word}, short={is_short}, notlink={is_not_link}, notmention={is_not_mention}, chars={is_word_chars})")
 
         if valid:
             # Same person can't go twice in a row

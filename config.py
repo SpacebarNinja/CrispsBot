@@ -157,7 +157,7 @@ WORD_GAME = {
         "title": "📖 Word Game",
         "title_ended": "📖 Story Complete!",
         "empty_story": "*Type a word to start the story!*",
-        "footer": "One word per message • Punctuation auto-formats",
+        "footer": "Create a collaborative story, one word at a time!",
         "footer_ended": "words total",
         "last_word_by": "Last word by",
         "color": "9B59B6",
