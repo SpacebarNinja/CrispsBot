@@ -732,7 +732,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.51"
+BOT_VERSION = "v1.52"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1180,9 +1180,10 @@ async def placepingrolepicker_cmd(interaction: discord.Interaction, feature: app
     
     embed = discord.Embed(
         title=f"🔔 {feature_name} Notifications",
-        description=f"React with 👍 to get the <@&{role_id}> role and be pinged for {feature_name}!\n\n**Includes:** {description_text}\n\nUnreact to remove the role.",
+        description=f"React with 👍 to get the <@&{role_id}> role and be pinged for {feature_name}!\n\n**Includes:** {description_text}",
         color=int(config.COLORS[feature.value], 16),
     )
+    embed.set_footer(text="Unreact to remove the role.")
 
     await interaction.response.defer(ephemeral=True)
     msg = await interaction.channel.send(embed=embed)
