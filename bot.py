@@ -288,6 +288,12 @@ async def do_chip_drop(guild_id: str, channel_id: str = None):
     if not channel_id:
         print(f"[ChipDrop] No channel available for guild {guild_id}")
         return
+    
+    # Check if channel is blacklisted
+    if await db.is_channel_blacklisted(guild_id, channel_id):
+        print(f"[ChipDrop] Channel {channel_id} is blacklisted, skipping")
+        return
+    
     channel = bot.get_channel(int(channel_id))
     if not channel:
         print(f"[ChipDrop] Could not find channel {channel_id}")
@@ -732,7 +738,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.53"
+BOT_VERSION = "v1.54"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -911,7 +917,6 @@ async def stats_cmd(interaction: discord.Interaction):
         app_commands.Choice(name="Chill Questions", value="chill"),
         app_commands.Choice(name="Typology Questions", value="typology"),
         app_commands.Choice(name="Code Purple", value="codepurple"),
-        app_commands.Choice(name="Chip Drops", value="chipdrop"),
         app_commands.Choice(name="Activity Rewards", value="activity_rewards"),
         app_commands.Choice(name="Word Game", value="wordgame"),
     ]
@@ -952,7 +957,6 @@ async def viewchannels_cmd(interaction: discord.Interaction):
         "chill": "🌙 Chill Questions",
         "typology": "✨ Typology Questions",
         "codepurple": "💜 Code Purple",
-        "chipdrop": "🥔 Chip Drops",
         "activity_rewards": "🏆 Activity Rewards",
         "wordgame": "📖 Word Game",
     }
@@ -961,10 +965,48 @@ async def viewchannels_cmd(interaction: discord.Interaction):
     for key, name in features.items():
         ch = channels.get(key)
         lines.append(f"{name}: {f'<#{ch}>' if ch else '*not set*'}")
+    
+    # Chip drops note
+    lines.append("🥔 Chip Drops: *Drops in active channels*")
+    
+    # Blacklisted channels
+    blacklist = await db.get_blacklisted_channels(gid)
     lines.append("")
-    lines.append("*Use `/setchannel` to configure*")
+    if blacklist:
+        lines.append("**🚫 Chip Drop Blacklist:**")
+        for ch_id in blacklist:
+            lines.append(f"• <#{ch_id}>")
+    else:
+        lines.append("*No channels blacklisted for chip drops*")
+    
+    lines.append("")
+    lines.append("*Use `/setchannel` to configure, `/blacklistchannel` to blacklist*")
 
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+
+@bot.tree.command(name="blacklistchannel", description="Blacklist a channel from chip drops (admin only)")
+@app_commands.default_permissions(administrator=True)
+@app_commands.describe(channel="Channel to blacklist")
+async def blacklistchannel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
+    gid = str(interaction.guild_id)
+    added = await db.add_blacklisted_channel(gid, str(channel.id))
+    if added:
+        await interaction.response.send_message(f"✅ {channel.mention} blacklisted from chip drops", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"⚠️ {channel.mention} is already blacklisted", ephemeral=True)
+
+
+@bot.tree.command(name="unblacklistchannel", description="Remove a channel from chip drop blacklist (admin only)")
+@app_commands.default_permissions(administrator=True)
+@app_commands.describe(channel="Channel to unblacklist")
+async def unblacklistchannel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
+    gid = str(interaction.guild_id)
+    removed = await db.remove_blacklisted_channel(gid, str(channel.id))
+    if removed:
+        await interaction.response.send_message(f"✅ {channel.mention} removed from blacklist", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"⚠️ {channel.mention} wasn't blacklisted", ephemeral=True)
 
 
 @bot.tree.command(name="viewschedule", description="View upcoming scheduled posts (admin only)")
@@ -978,14 +1020,12 @@ async def viewschedule_cmd(interaction: discord.Interaction):
 
     # --- Channel Status ---
     lines.append("**📌 Channel Setup**")
-    channel_types = ["warm", "chill", "typology", "chip_drop", "chatter", "code_purple", "activity_rewards"]
+    channel_types = ["warm", "chill", "typology", "codepurple", "activity_rewards"]
     channel_names = {
         "warm": "🔥 Warm Questions",
         "chill": "🌙 Chill Questions", 
         "typology": "✨ Typology Questions",
-        "chip_drop": "🥔 Chip Drops",
-        "chatter": "💬 Chatter Rewards",
-        "code_purple": "💜 Code Purple",
+        "codepurple": "💜 Code Purple",
         "activity_rewards": "🏆 Activity Rewards",
     }
     for ctype in channel_types:
@@ -994,6 +1034,8 @@ async def viewschedule_cmd(interaction: discord.Interaction):
             lines.append(f"✅ {channel_names[ctype]}: <#{ch_id}>")
         else:
             lines.append(f"❌ {channel_names[ctype]}: Not set")
+    # Chip drops don't need a channel - they drop in active channels
+    lines.append("✅ 🥔 Chip Drops: Drops in active channels")
     
     lines.append("")
 
@@ -1038,16 +1080,6 @@ async def viewschedule_cmd(interaction: discord.Interaction):
         lines.append(f"{names[qtype]} <t:{ts}:R> {status}")
 
     lines.append("")
-
-    # Chatter rewards
-    sched = config.CHATTER_SCHEDULE
-    next_chatter = now_manila.replace(hour=sched["hour"], minute=sched["minute"], second=0, microsecond=0)
-    if next_chatter <= now_manila:
-        next_chatter += timedelta(days=1)
-    ts = int(next_chatter.astimezone(timezone.utc).timestamp())
-    ch_id = await db.get_channel(gid, "chatter")
-    status = f"→ <#{ch_id}>" if ch_id else "→ ⚠️ No channel"
-    lines.append(f"💬 Chatter Rewards <t:{ts}:R> {status}")
 
     # Activity rewards
     act_sched = config.ACTIVITY_REWARDS
@@ -1312,12 +1344,32 @@ async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
         return
     gid = str(message.guild.id)
+    uid = str(message.author.id)
 
-    # Track activity for code purple & chatter rewards & activity rewards
+    # Track activity for code purple
     await db.set_state(gid, "last_message_time", datetime.now(timezone.utc).isoformat())
     await db.set_state(gid, "last_message_channel", str(message.channel.id))
-    await db.increment_chatter(gid, str(message.author.id), message.author.display_name)
-    await db.increment_activity_message(gid, str(message.author.id), message.author.display_name)
+    
+    # Anti-spam: Only count activity if message sent >3 seconds after user's last message
+    now = datetime.now(timezone.utc)
+    last_msg_key = f"user_last_msg_{uid}"
+    last_msg_time = await db.get_state(gid, last_msg_key)
+    
+    is_spam = False
+    if last_msg_time:
+        last_dt = datetime.fromisoformat(last_msg_time)
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
+        if (now - last_dt).total_seconds() < 3:
+            is_spam = True
+    
+    # Update user's last message time
+    await db.set_state(gid, last_msg_key, now.isoformat())
+    
+    # Only count for rewards if not spam
+    if not is_spam:
+        await db.increment_chatter(gid, uid, message.author.display_name)
+        await db.increment_activity_message(gid, uid, message.author.display_name)
 
     # --- Chip Drop handling (grab or math answer) ---
     drop = await db.get_chip_drop(gid)

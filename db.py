@@ -319,6 +319,42 @@ async def get_all_channels(guild_id: str) -> dict:
     return result
 
 
+# ==================== BLACKLIST ====================
+
+async def get_blacklisted_channels(guild_id: str) -> list[str]:
+    """Get list of blacklisted channel IDs for chip drops"""
+    blacklist_str = await get_state(guild_id, "chipdrop_blacklist")
+    if not blacklist_str:
+        return []
+    return [ch for ch in blacklist_str.split(",") if ch]
+
+
+async def add_blacklisted_channel(guild_id: str, channel_id: str) -> bool:
+    """Add a channel to chip drop blacklist. Returns True if added, False if already exists."""
+    blacklist = await get_blacklisted_channels(guild_id)
+    if channel_id in blacklist:
+        return False
+    blacklist.append(channel_id)
+    await set_state(guild_id, "chipdrop_blacklist", ",".join(blacklist))
+    return True
+
+
+async def remove_blacklisted_channel(guild_id: str, channel_id: str) -> bool:
+    """Remove a channel from chip drop blacklist. Returns True if removed, False if not found."""
+    blacklist = await get_blacklisted_channels(guild_id)
+    if channel_id not in blacklist:
+        return False
+    blacklist.remove(channel_id)
+    await set_state(guild_id, "chipdrop_blacklist", ",".join(blacklist))
+    return True
+
+
+async def is_channel_blacklisted(guild_id: str, channel_id: str) -> bool:
+    """Check if a channel is blacklisted for chip drops"""
+    blacklist = await get_blacklisted_channels(guild_id)
+    return channel_id in blacklist
+
+
 # ==================== WORD GAME ====================
 
 async def get_word_game(guild_id: str) -> dict | None:
