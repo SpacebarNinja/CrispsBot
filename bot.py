@@ -732,7 +732,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.48"
+BOT_VERSION = "v1.49"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
