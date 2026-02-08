@@ -121,11 +121,16 @@ async def post_warm(guild_id: str):
     await db.mark_question_used(guild_id, "warm", idx)
     question, category = all_q[idx]
 
+    # Increment and get question counter
+    count_str = await db.get_state(guild_id, "warm_question_count") or "0"
+    count = int(count_str) + 1
+    await db.set_state(guild_id, "warm_question_count", str(count))
+
     embed = _embed(
         config.EMBEDS["warm"]["title"],
         question,
         "warm",
-        footer=category,
+        footer=f"{category} (#{count})",
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_warm")
@@ -159,11 +164,16 @@ async def post_chill(guild_id: str):
     await db.mark_question_used(guild_id, "chill", idx)
     question, category = all_q[idx]
 
+    # Increment and get question counter
+    count_str = await db.get_state(guild_id, "chill_question_count") or "0"
+    count = int(count_str) + 1
+    await db.set_state(guild_id, "chill_question_count", str(count))
+
     embed = _embed(
         config.EMBEDS["chill"]["title"],
         question,
         "chill",
-        footer=category,
+        footer=f"{category} (#{count})",
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_chill")
@@ -207,11 +217,16 @@ async def post_typology(guild_id: str):
         description = question
         footer_text = "Friend Group"
     
+    # Increment and get question counter
+    count_str = await db.get_state(guild_id, "typology_question_count") or "0"
+    count = int(count_str) + 1
+    await db.set_state(guild_id, "typology_question_count", str(count))
+
     embed = _embed(
         config.EMBEDS["typology"]["title"],
         description,
         "typology",
-        footer=footer_text,
+        footer=f"{footer_text} (#{count})",
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_typology")
@@ -265,13 +280,17 @@ def generate_math_question() -> tuple[str, int]:
     return equation, answer
 
 
-async def do_chip_drop(guild_id: str):
+async def do_chip_drop(guild_id: str, channel_id: str = None):
     """Create a new chip drop event"""
-    channel_id = await db.get_channel(guild_id, "chipdrop")
+    # Use provided channel or fall back to last message channel
     if not channel_id:
+        channel_id = await db.get_state(guild_id, "last_message_channel")
+    if not channel_id:
+        print(f"[ChipDrop] No channel available for guild {guild_id}")
         return
     channel = bot.get_channel(int(channel_id))
     if not channel:
+        print(f"[ChipDrop] Could not find channel {channel_id}")
         return
 
     # Check if there's already an active drop
@@ -713,7 +732,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.47"
+BOT_VERSION = "v1.48"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -802,7 +821,7 @@ async def chips_cmd(interaction: discord.Interaction, user: discord.Member, amou
 @app_commands.default_permissions(administrator=True)
 async def forcedrop_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(config.MESSAGES["success"]["force_drop"], ephemeral=True)
-    await do_chip_drop(str(interaction.guild_id))
+    await do_chip_drop(str(interaction.guild_id), str(interaction.channel_id))
 
 
 @bot.tree.command(name="forcequestion", description="Force post a daily question (admin only)")
@@ -1283,6 +1302,7 @@ async def on_message(message: discord.Message):
 
     # Track activity for code purple & chatter rewards & activity rewards
     await db.set_state(gid, "last_message_time", datetime.now(timezone.utc).isoformat())
+    await db.set_state(gid, "last_message_channel", str(message.channel.id))
     await db.increment_chatter(gid, str(message.author.id), message.author.display_name)
     await db.increment_activity_message(gid, str(message.author.id), message.author.display_name)
 
