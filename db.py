@@ -188,7 +188,7 @@ async def get_rank(guild_id: str, user_id: str) -> int | None:
 async def get_leaderboard(guild_id: str, limit: int = 10) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as conn:
         cursor = await conn.execute(
-            "SELECT user_id, username, chips FROM users WHERE guild_id = ? AND chips > 0 ORDER BY chips DESC LIMIT ?",
+            "SELECT user_id, username, chips FROM users WHERE guild_id = ? ORDER BY chips DESC LIMIT ?",
             (guild_id, limit)
         )
         rows = await cursor.fetchall()

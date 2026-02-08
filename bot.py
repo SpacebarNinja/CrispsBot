@@ -708,7 +708,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.45"
+BOT_VERSION = "v1.46"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -735,10 +735,15 @@ async def balance_cmd(interaction: discord.Interaction):
 @bot.tree.command(name="chipleaderboard", description="View the server chip leaderboard 🏆")
 async def leaderboard_cmd(interaction: discord.Interaction):
     gid, uid = str(interaction.guild_id), str(interaction.user.id)
-    entries = await db.get_leaderboard(gid, config.LEADERBOARD["page_size"])
+    entries = await db.get_leaderboard(gid, 10)
 
     if not entries:
-        await interaction.response.send_message(config.MESSAGES["leaderboard"]["empty"], ephemeral=True)
+        embed = discord.Embed(
+            title=config.EMBEDS["leaderboard"]["title"],
+            description="No one has earned chips yet! Be the first! 🥔",
+            color=int(config.COLORS["leaderboard"], 16),
+        )
+        await interaction.response.send_message(embed=embed)
         return
 
     rank_emojis = config.EMBEDS["leaderboard"]["rank_emojis"]
@@ -759,13 +764,11 @@ async def leaderboard_cmd(interaction: discord.Interaction):
         title=config.EMBEDS["leaderboard"]["title"],
         description="\n".join(lines),
         color=int(config.COLORS["leaderboard"], 16),
-        timestamp=datetime.now(timezone.utc),
     )
-    embed.set_footer(text=config.EMBEDS["leaderboard"]["footer"])
 
     user_rank = await db.get_rank(gid, uid)
     user_bal = await db.get_balance(gid, uid)
-    if user_rank and user_rank > config.LEADERBOARD["page_size"]:
+    if user_rank and user_rank > 10:
         embed.add_field(
             name="Your Position",
             value=config.MESSAGES["leaderboard"]["your_position"].format(
