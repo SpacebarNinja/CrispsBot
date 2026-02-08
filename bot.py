@@ -50,7 +50,7 @@ async def get_unused_question(guild_id: str, qtype: str, questions: list[str]) -
     return questions[idx]
 
 
-def _embed(title: str, description: str, color_key: str, footer: str, author: bool = True) -> discord.Embed:
+def _embed(title: str, description: str, color_key: str, footer: str = "", author: bool = True) -> discord.Embed:
     """Shortcut to build a standard embed."""
     e = discord.Embed(
         title=title,
@@ -58,7 +58,8 @@ def _embed(title: str, description: str, color_key: str, footer: str, author: bo
         color=int(config.COLORS[color_key], 16),
         timestamp=datetime.now(timezone.utc),
     )
-    e.set_footer(text=footer)
+    if footer:
+        e.set_footer(text=footer)
     if author and config.AUTHOR_NAME:
         e.set_author(name=config.AUTHOR_NAME)
     return e
@@ -123,7 +124,6 @@ async def post_warm(guild_id: str):
         config.EMBEDS["warm"]["title"],
         f"*{category}*\n\n{question}",
         "warm",
-        config.EMBEDS["warm"]["footer"],
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_warm")
@@ -158,7 +158,6 @@ async def post_chill(guild_id: str):
         config.EMBEDS["chill"]["title"],
         f"*{category}*\n\n{question}",
         "chill",
-        config.EMBEDS["chill"]["footer"],
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_chill")
@@ -200,7 +199,6 @@ async def post_typology(guild_id: str):
         config.EMBEDS["typology"]["title"],
         description,
         "typology",
-        config.EMBEDS["typology"]["footer"],
     )
 
     ping_role_id = await db.get_state(guild_id, "ping_role_typology")
@@ -1077,7 +1075,7 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.4 - chip drops + activity rewards)")
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.41 - cleanup)")
 
 
 @bot.event

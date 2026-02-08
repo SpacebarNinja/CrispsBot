@@ -63,7 +63,7 @@ LEADERBOARD = {
 
 # ==================== EMBED CONFIG ====================
 
-AUTHOR_NAME = "CRISPS GC ✶⋆.˚🥔"
+AUTHOR_NAME = ""
 
 # Colors as hex WITHOUT the # prefix (used with int(x, 16))
 COLORS = {
@@ -76,15 +76,12 @@ COLORS = {
 EMBEDS = {
     "warm": {
         "title": "🔥 Warm Question",
-        "footer": "Drop your thoughts below 💭",
     },
     "chill": {
         "title": "🌙 Chill Question",
-        "footer": "Drop your thoughts below 💭",
     },
     "typology": {
         "title": "✨ Typology Question",
-        "footer": "Drop your thoughts below 💭",
     },
     "leaderboard": {
         "title": "🏆 Chip Leaderboard",
