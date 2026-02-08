@@ -30,9 +30,9 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Daily question rotation: typology → casual → personality → ...
-DAILY_QUESTION_ORDER = ["typology", "casual", "personality"]
-QUESTION_GAP_HOURS = 24 / len(DAILY_QUESTION_ORDER)  # 8 hours
+# Daily question rotation: casual → personality → ...
+DAILY_QUESTION_ORDER = ["casual", "personality"]
+QUESTION_GAP_HOURS = 24 / len(DAILY_QUESTION_ORDER)  # 12 hours
 
 
 # ======================== HELPERS ========================
@@ -95,33 +95,6 @@ def format_story(words_str: str) -> str:
 # ======================== POSTING FUNCTIONS ========================
 
 
-async def post_typology(guild_id: str):
-    channel_id = await db.get_channel(guild_id, "typology")
-    if not channel_id:
-        return
-    channel = bot.get_channel(int(channel_id))
-    if not channel:
-        return
-
-    type1 = f"{random.choice(config.MBTI_TYPES)} {random.choice(config.ENNEAGRAM_TYPES)}"
-    type2 = type1
-    while type2 == type1:
-        type2 = f"{random.choice(config.MBTI_TYPES)} {random.choice(config.ENNEAGRAM_TYPES)}"
-
-    question = await get_unused_question(guild_id, "typology", config.TYPOLOGY_QUESTIONS)
-    embed = _embed(
-        config.EMBEDS["typology"]["title"],
-        f"**{type1}** or **{type2}**\n\n{question}",
-        "typology",
-        config.EMBEDS["typology"]["footer"],
-    )
-
-    # Ping typology role
-    ping_role_id = await db.get_state(guild_id, "ping_role_typology")
-    content = f"<@&{ping_role_id}>" if ping_role_id else None
-    await channel.send(content=content, embed=embed)
-
-
 async def post_casual(guild_id: str):
     channel_id = await db.get_channel(guild_id, "casual")
     if not channel_id:
@@ -166,10 +139,26 @@ async def post_personality(guild_id: str):
     if not channel:
         return
 
-    question = await get_unused_question(guild_id, "personality", config.PERSONALITY_QUESTIONS)
+    # Randomly select from personality sub-categories
+    category = random.choice(["lifestyle", "typology"])
+    
+    if category == "typology":
+        # Generate typology comparison question
+        type1 = f"{random.choice(config.MBTI_TYPES)} {random.choice(config.ENNEAGRAM_TYPES)}"
+        type2 = type1
+        while type2 == type1:
+            type2 = f"{random.choice(config.MBTI_TYPES)} {random.choice(config.ENNEAGRAM_TYPES)}"
+        
+        question_template = await get_unused_question(guild_id, "personality_typology", config.TYPOLOGY_QUESTIONS)
+        description = f"**{type1}** or **{type2}**\n\n{question_template}"
+    else:
+        # Lifestyle personality question
+        question = await get_unused_question(guild_id, "personality_lifestyle", config.PERSONALITY_QUESTIONS)
+        description = question
+    
     embed = _embed(
         config.EMBEDS["personality"]["title"],
-        question,
+        description,
         "personality",
         config.EMBEDS["personality"]["footer"],
     )
@@ -182,7 +171,6 @@ async def post_personality(guild_id: str):
 
 # Map question type → post function
 QUESTION_POST_FNS = {
-    "typology": post_typology,
     "casual": post_casual,
     "personality": post_personality,
 }
@@ -820,7 +808,6 @@ async def resettimer_cmd(interaction: discord.Interaction, feature: app_commands
 # ---------- Ping Role ----------
 
 QUESTION_FEATURE_NAMES = {
-    "typology": "✨ Typology Daily",
     "casual": "💬 Casual Question Daily",
     "personality": "🧠 Personality Daily",
 }
@@ -831,7 +818,6 @@ QUESTION_FEATURE_NAMES = {
 @app_commands.describe(feature="Which daily question type", role="The role to ping")
 @app_commands.choices(
     feature=[
-        app_commands.Choice(name="Typology Daily", value="typology"),
         app_commands.Choice(name="Casual Question Daily", value="casual"),
         app_commands.Choice(name="Personality Daily", value="personality"),
     ]
@@ -847,7 +833,6 @@ async def setpingrole_cmd(interaction: discord.Interaction, feature: app_command
 @app_commands.describe(feature="Which daily question type")
 @app_commands.choices(
     feature=[
-        app_commands.Choice(name="Typology Daily", value="typology"),
         app_commands.Choice(name="Casual Question Daily", value="casual"),
         app_commands.Choice(name="Personality Daily", value="personality"),
     ]
@@ -893,7 +878,7 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.8)")
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v2.0 - 2 daily question types)")
 
 
 @bot.event
@@ -906,9 +891,9 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 
     gid = str(payload.guild_id)
     
-    # Check all three feature pickers
+    # Check all feature pickers
     matched_feature = None
-    for feature in ["typology", "casual", "personality"]:
+    for feature in ["casual", "personality"]:
         picker_msg_id = await db.get_state(gid, f"role_picker_message_{feature}")
         if picker_msg_id and str(payload.message_id) == picker_msg_id:
             matched_feature = feature
@@ -950,9 +935,9 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
 
     gid = str(payload.guild_id)
     
-    # Check all three feature pickers
+    # Check all feature pickers
     matched_feature = None
-    for feature in ["typology", "casual", "personality"]:
+    for feature in ["casual", "personality"]:
         picker_msg_id = await db.get_state(gid, f"role_picker_message_{feature}")
         if picker_msg_id and str(payload.message_id) == picker_msg_id:
             matched_feature = feature

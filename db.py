@@ -66,6 +66,17 @@ async def init():
         await conn.execute(
             "UPDATE question_usage SET question_type = 'casual' WHERE question_type = 'spark'"
         )
+        # v2.0 migration: merge typology into personality
+        await conn.execute(
+            "UPDATE question_usage SET question_type = 'personality_typology' WHERE question_type = 'typology'"
+        )
+        await conn.execute(
+            "UPDATE question_usage SET question_type = 'personality_lifestyle' WHERE question_type = 'personality'"
+        )
+        # Clean up old typology-specific state keys
+        await conn.execute(
+            "DELETE FROM bot_state WHERE key LIKE '%typology%'"
+        )
         await conn.commit()
 
 
