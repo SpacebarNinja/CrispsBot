@@ -527,23 +527,36 @@ async def schedule_loop():
                 next_q = next_q.replace(tzinfo=timezone.utc)
 
             if now_utc >= next_q:
-                # Time to post!
+                # Duplicate prevention: Check if we posted very recently
+                last_post_iso = await db.get_state(gid, "last_question_posted_at")
+                if last_post_iso:
+                    last_post = datetime.fromisoformat(last_post_iso)
+                    if last_post.tzinfo is None:
+                        last_post = last_post.replace(tzinfo=timezone.utc)
+                    # Skip if we posted within the last 60 seconds (anti-duplicate)
+                    if (now_utc - last_post).total_seconds() < 60:
+                        print(f"[Schedule] Skipping duplicate post attempt for guild {gid}")
+                        continue
+                
+                # Lock: Update state BEFORE posting to prevent race conditions
                 idx_str = await db.get_state(gid, "daily_question_index") or "0"
                 idx = int(idx_str) % len(DAILY_QUESTION_ORDER)
                 qtype = DAILY_QUESTION_ORDER[idx]
+                
+                # Schedule next question FIRST (prevents duplicate triggers)
+                next_idx = (idx + 1) % len(DAILY_QUESTION_ORDER)
+                next_time = now_utc + timedelta(hours=QUESTION_GAP_HOURS)
+                await db.set_state(gid, "next_daily_question", next_time.isoformat())
+                await db.set_state(gid, "daily_question_index", str(next_idx))
+                await db.set_state(gid, "last_question_posted_at", now_utc.isoformat())
+                
+                # Now post
                 post_fn = QUESTION_POST_FNS.get(qtype)
-
                 if post_fn:
                     try:
                         await post_fn(gid)
                     except Exception as e:
                         print(f"Error posting {qtype}: {e}")
-
-                # Schedule next question
-                next_idx = (idx + 1) % len(DAILY_QUESTION_ORDER)
-                next_time = now_utc + timedelta(hours=QUESTION_GAP_HOURS)
-                await db.set_state(gid, "next_daily_question", next_time.isoformat())
-                await db.set_state(gid, "daily_question_index", str(next_idx))
 
         # --- Chatter Rewards (fixed Manila time) ---
         sched = config.CHATTER_SCHEDULE
@@ -752,7 +765,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.55"
+BOT_VERSION = "v1.56"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
