@@ -116,8 +116,8 @@ async def post_typology(guild_id: str):
         config.EMBEDS["typology"]["footer"],
     )
 
-    # Ping daily question role
-    ping_role_id = await db.get_state(guild_id, "ping_role")
+    # Ping typology role
+    ping_role_id = await db.get_state(guild_id, "ping_role_typology")
     content = f"<@&{ping_role_id}>" if ping_role_id else None
     await channel.send(content=content, embed=embed)
 
@@ -152,7 +152,8 @@ async def post_casual(guild_id: str):
         config.EMBEDS["casual"]["footer"],
     )
 
-    ping_role_id = await db.get_state(guild_id, "ping_role")
+    # Ping casual role
+    ping_role_id = await db.get_state(guild_id, "ping_role_casual")
     content = f"<@&{ping_role_id}>" if ping_role_id else None
     await channel.send(content=content, embed=embed)
 
@@ -173,7 +174,8 @@ async def post_personality(guild_id: str):
         config.EMBEDS["personality"]["footer"],
     )
 
-    ping_role_id = await db.get_state(guild_id, "ping_role")
+    # Ping personality role
+    ping_role_id = await db.get_state(guild_id, "ping_role_personality")
     content = f"<@&{ping_role_id}>" if ping_role_id else None
     await channel.send(content=content, embed=embed)
 
@@ -817,31 +819,53 @@ async def resettimer_cmd(interaction: discord.Interaction, feature: app_commands
 
 # ---------- Ping Role ----------
 
+QUESTION_FEATURE_NAMES = {
+    "typology": "✨ Typology Daily",
+    "casual": "💬 Casual Question Daily",
+    "personality": "🧠 Personality Daily",
+}
 
-@bot.tree.command(name="setpingrole", description="Set the role to ping for daily questions (admin only)")
+
+@bot.tree.command(name="setpingrole", description="Set the role to ping for a daily question type (admin only)")
 @app_commands.default_permissions(administrator=True)
-@app_commands.describe(role="The role to ping when daily questions are posted")
-async def setpingrole_cmd(interaction: discord.Interaction, role: discord.Role):
+@app_commands.describe(feature="Which daily question type", role="The role to ping")
+@app_commands.choices(
+    feature=[
+        app_commands.Choice(name="Typology Daily", value="typology"),
+        app_commands.Choice(name="Casual Question Daily", value="casual"),
+        app_commands.Choice(name="Personality Daily", value="personality"),
+    ]
+)
+async def setpingrole_cmd(interaction: discord.Interaction, feature: app_commands.Choice[str], role: discord.Role):
     gid = str(interaction.guild_id)
-    await db.set_state(gid, "ping_role", str(role.id))
-    await interaction.response.send_message(f"Daily question ping role set to {role.mention}", ephemeral=True)
+    await db.set_state(gid, f"ping_role_{feature.value}", str(role.id))
+    await interaction.response.send_message(f"{feature.name} ping role set to {role.mention}", ephemeral=True)
 
 
-@bot.tree.command(name="placepingrolepicker", description="Post a reaction role picker for daily question pings (admin only)")
+@bot.tree.command(name="placepingrolepicker", description="Post a reaction role picker for a daily question type (admin only)")
 @app_commands.default_permissions(administrator=True)
-async def placepingrolepicker_cmd(interaction: discord.Interaction):
+@app_commands.describe(feature="Which daily question type")
+@app_commands.choices(
+    feature=[
+        app_commands.Choice(name="Typology Daily", value="typology"),
+        app_commands.Choice(name="Casual Question Daily", value="casual"),
+        app_commands.Choice(name="Personality Daily", value="personality"),
+    ]
+)
+async def placepingrolepicker_cmd(interaction: discord.Interaction, feature: app_commands.Choice[str]):
     gid = str(interaction.guild_id)
-    role_id = await db.get_state(gid, "ping_role")
+    role_id = await db.get_state(gid, f"ping_role_{feature.value}")
     if not role_id:
         await interaction.response.send_message(
-            "No ping role set! Use `/setpingrole` first.", ephemeral=True
+            f"No ping role set for {feature.name}! Use `/setpingrole {feature.value}` first.", ephemeral=True
         )
         return
 
+    feature_name = QUESTION_FEATURE_NAMES[feature.value]
     embed = discord.Embed(
-        title="🔔 Daily Question Notifications",
-        description=f"React with 👍 to get the <@&{role_id}> role and be pinged for daily questions!\n\nUnreact to remove the role.",
-        color=int(config.COLORS["typology"], 16),
+        title=f"🔔 {feature_name} Notifications",
+        description=f"React with 👍 to get the <@&{role_id}> role and be pinged for {feature_name}!\n\nUnreact to remove the role.",
+        color=int(config.COLORS[feature.value], 16),
         timestamp=datetime.now(timezone.utc),
     )
     embed.set_footer(text="React below to toggle notifications")
@@ -851,8 +875,8 @@ async def placepingrolepicker_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     msg = await interaction.channel.send(embed=embed)
     await msg.add_reaction("👍")
-    await db.set_state(gid, "role_picker_message", str(msg.id))
-    await interaction.followup.send("Role picker posted! ✅", ephemeral=True)
+    await db.set_state(gid, f"role_picker_message_{feature.value}", str(msg.id))
+    await interaction.followup.send(f"{feature.name} role picker posted! ✅", ephemeral=True)
 
 
 # ======================== EVENTS ========================
@@ -869,7 +893,7 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.2)")
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.3)")
 
 
 @bot.event
@@ -881,13 +905,19 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         return
 
     gid = str(payload.guild_id)
-    picker_msg_id = await db.get_state(gid, "role_picker_message")
-    print(f"[DEBUG] Reaction add: msg={payload.message_id}, stored={picker_msg_id}")
-    if not picker_msg_id or str(payload.message_id) != picker_msg_id:
+    
+    # Check all three feature pickers
+    matched_feature = None
+    for feature in ["typology", "casual", "personality"]:
+        picker_msg_id = await db.get_state(gid, f"role_picker_message_{feature}")
+        if picker_msg_id and str(payload.message_id) == picker_msg_id:
+            matched_feature = feature
+            break
+    
+    if not matched_feature:
         return
 
-    role_id = await db.get_state(gid, "ping_role")
-    print(f"[DEBUG] Role ID from DB: {role_id}")
+    role_id = await db.get_state(gid, f"ping_role_{matched_feature}")
     if not role_id:
         return
 
@@ -903,12 +933,11 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 
     role = guild.get_role(int(role_id))
     if not role:
-        print(f"[DEBUG] Role not found: {role_id}")
         return
 
     try:
         await member.add_roles(role)
-        print(f"[DEBUG] Added role {role.name} to {member.display_name}")
+        print(f"[Role] Added {role.name} to {member.display_name}")
     except Exception as e:
         print(f"Failed to add role: {e}")
 
@@ -920,11 +949,19 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
         return
 
     gid = str(payload.guild_id)
-    picker_msg_id = await db.get_state(gid, "role_picker_message")
-    if not picker_msg_id or str(payload.message_id) != picker_msg_id:
+    
+    # Check all three feature pickers
+    matched_feature = None
+    for feature in ["typology", "casual", "personality"]:
+        picker_msg_id = await db.get_state(gid, f"role_picker_message_{feature}")
+        if picker_msg_id and str(payload.message_id) == picker_msg_id:
+            matched_feature = feature
+            break
+    
+    if not matched_feature:
         return
 
-    role_id = await db.get_state(gid, "ping_role")
+    role_id = await db.get_state(gid, f"ping_role_{matched_feature}")
     if not role_id:
         return
 
@@ -944,6 +981,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
 
     try:
         await member.remove_roles(role)
+        print(f"[Role] Removed {role.name} from {member.display_name}")
     except Exception as e:
         print(f"Failed to remove role: {e}")
 
