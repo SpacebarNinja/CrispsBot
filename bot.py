@@ -216,7 +216,45 @@ QUESTION_POST_FNS = {
 }
 
 
+def generate_math_question() -> tuple[str, int]:
+    """Generate a random math question and answer"""
+    ops = [
+        ("+", lambda a, b: a + b),
+        ("-", lambda a, b: a - b),
+        ("×", lambda a, b: a * b),
+    ]
+    
+    # Generate 2-3 operand expression
+    num_ops = random.choice([1, 2])
+    
+    if num_ops == 1:
+        a = random.randint(1, 50)
+        b = random.randint(1, 50)
+        op_symbol, op_func = random.choice(ops)
+        equation = f"{a} {op_symbol} {b}"
+        answer = op_func(a, b)
+    else:
+        # 3 operands - follow order of operations
+        a = random.randint(1, 20)
+        b = random.randint(1, 20)
+        c = random.randint(1, 20)
+        op1_symbol, op1_func = random.choice(ops)
+        op2_symbol, op2_func = random.choice(ops)
+        equation = f"{a} {op1_symbol} {b} {op2_symbol} {c}"
+        
+        # Calculate following order of operations (×/÷ before +/-)
+        if op2_symbol == "×":
+            answer = op1_func(a, op2_func(b, c))
+        elif op1_symbol == "×":
+            answer = op2_func(op1_func(a, b), c)
+        else:
+            answer = op2_func(op1_func(a, b), c)
+    
+    return equation, answer
+
+
 async def do_chip_drop(guild_id: str):
+    """Create a new chip drop event"""
     channel_id = await db.get_channel(guild_id, "chipdrop")
     if not channel_id:
         return
@@ -224,15 +262,56 @@ async def do_chip_drop(guild_id: str):
     if not channel:
         return
 
-    amount = config.CHIPS["rewards"]["chip_drop"]
-    announcement = random.choice(config.MESSAGES["chip_drop"]["announcements"]).format(
-        amount=amount, emoji=config.CHIPS["emoji"]
-    )
+    # Check if there's already an active drop
+    existing = await db.get_chip_drop(guild_id)
+    if existing:
+        return
 
-    view = ChipDropView(amount, guild_id)
-    msg = await channel.send(content=announcement, view=view)
-    view.message = msg
-    await db.set_state(guild_id, "last_chip_drop", datetime.now(timezone.utc).isoformat())
+    # Random amount between min and max
+    amount = random.randint(config.CHIP_DROP["min_amount"], config.CHIP_DROP["max_amount"])
+    emoji = config.CHIPS["emoji"]
+    
+    # 20% chance for math, 80% for grab
+    if random.random() < config.CHIP_DROP["math_chance"]:
+        equation, answer = generate_math_question()
+        announcement = config.MESSAGES["chip_drop"]["math_announcement"].format(
+            equation=equation, amount=amount, emoji=emoji
+        )
+        drop_type = "math"
+        answer_str = str(answer)
+    else:
+        announcement = config.MESSAGES["chip_drop"]["grab_announcement"].format(
+            amount=amount, emoji=emoji
+        )
+        drop_type = "grab"
+        answer_str = ""
+
+    msg = await channel.send(announcement)
+    await db.create_chip_drop(guild_id, str(channel.id), str(msg.id), amount, drop_type, answer_str)
+
+
+async def check_chip_drop_expired(guild_id: str):
+    """Check if active chip drop has expired"""
+    drop = await db.get_chip_drop(guild_id)
+    if not drop:
+        return
+    
+    created = datetime.fromisoformat(drop["created_at"])
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    
+    elapsed = (datetime.now(timezone.utc) - created).total_seconds()
+    if elapsed >= config.CHIP_DROP["timeout"]:
+        # Expired
+        channel = bot.get_channel(int(drop["channel_id"]))
+        if channel:
+            try:
+                msg = await channel.fetch_message(int(drop["message_id"]))
+                expired_msg = random.choice(config.MESSAGES["chip_drop"]["expired"])
+                await msg.edit(content=f"~~{msg.content}~~\n\n{expired_msg}")
+            except Exception:
+                pass
+        await db.delete_chip_drop(guild_id)
 
 
 async def check_code_purple(guild_id: str):
@@ -323,6 +402,55 @@ async def do_chatter_rewards(guild_id: str):
     await db.set_state(guild_id, "last_chatter_post", datetime.now(timezone.utc).isoformat())
 
 
+async def do_activity_rewards(guild_id: str):
+    """Daily activity rewards: messages + VC time"""
+    channel_id = await db.get_channel(guild_id, "activity_rewards")
+    if not channel_id:
+        return
+    channel = bot.get_channel(int(channel_id))
+    if not channel:
+        return
+
+    today = datetime.now(MANILA_TZ).date().isoformat()
+    top_activity = await db.get_top_activity(guild_id, today)
+    emoji = config.CHIPS["emoji"]
+    
+    rewards = [
+        config.ACTIVITY_REWARDS["first_place"],
+        config.ACTIVITY_REWARDS["second_place"],
+        config.ACTIVITY_REWARDS["third_place"],
+    ]
+    msg_templates = [
+        config.MESSAGES["activity_rewards"]["first_place"],
+        config.MESSAGES["activity_rewards"]["second_place"],
+        config.MESSAGES["activity_rewards"]["third_place"],
+    ]
+
+    if not top_activity:
+        await channel.send(config.MESSAGES["activity_rewards"]["no_activity"])
+        await db.clear_daily_activity(guild_id, today)
+        return
+
+    lines = [config.MESSAGES["activity_rewards"]["announcement"]]
+
+    for i, user in enumerate(top_activity):
+        if i >= 3:
+            break
+        await db.add_chips(guild_id, user["user_id"], user["username"], rewards[i])
+        lines.append(
+            msg_templates[i].format(
+                user=f"<@{user['user_id']}>",
+                amount=rewards[i],
+                emoji=emoji,
+                points=user["total"]
+            )
+        )
+
+    await channel.send("\n".join(lines))
+    await db.clear_daily_activity(guild_id, today)
+    await db.set_state(guild_id, "last_activity_post", datetime.now(timezone.utc).isoformat())
+
+
 # ======================== SCHEDULED TASKS ========================
 
 
@@ -383,6 +511,23 @@ async def schedule_loop():
                 except Exception as e:
                     print(f"Error doing chatter rewards: {e}")
 
+        # --- Activity Rewards (fixed Manila time) ---
+        act_sched = config.ACTIVITY_REWARDS
+        if now_manila.hour == act_sched["hour"] and now_manila.minute == act_sched["minute"]:
+            last = await db.get_state(gid, "last_activity_post")
+            should_post = True
+            if last:
+                ld = datetime.fromisoformat(last)
+                if ld.tzinfo is None:
+                    ld = ld.replace(tzinfo=timezone.utc)
+                if ld.astimezone(MANILA_TZ).date() >= now_manila.date():
+                    should_post = False
+            if should_post and config.FEATURES.get("activity_rewards"):
+                try:
+                    await do_activity_rewards(gid)
+                except Exception as e:
+                    print(f"Error doing activity rewards: {e}")
+
         # --- Code Purple (every hour) ---
         if now_manila.minute == 0:
             await check_code_purple(gid)
@@ -394,64 +539,73 @@ async def before_schedule():
 
 
 async def chip_drop_cycle():
-    """Background loop — drops chips at random intervals."""
+    """Background loop — manages chip drops based on activity."""
     await bot.wait_until_ready()
+    
     while not bot.is_closed():
-        delay = random.randint(
-            config.CHIP_DROP["min_interval"] * 60,
-            config.CHIP_DROP["max_interval"] * 60,
-        )
-        await asyncio.sleep(delay)
-        if config.FEATURES.get("chip_drops"):
-            for guild in bot.guilds:
-                gid = str(guild.id)
-                try:
-                    await do_chip_drop(gid)
-                except Exception as e:
-                    print(f"Chip drop error in {guild.name}: {e}")
-
-
-# ======================== CHIP DROP VIEW ========================
-
-
-class ChipDropView(discord.ui.View):
-    def __init__(self, amount: int, guild_id: str):
-        super().__init__(timeout=config.CHIP_DROP["button_timeout"])
-        self.amount = amount
-        self.guild_id = guild_id
-        self.claimed = False
-        self.message: discord.Message | None = None
-
-    @discord.ui.button(label="Grab free chips 🥔", style=discord.ButtonStyle.success)
-    async def grab(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.claimed:
-            await interaction.response.send_message("Already claimed. Better luck next time!", ephemeral=True)
-            return
-
-        self.claimed = True
-        button.disabled = True
-        button.label = f"Claimed by {interaction.user.display_name}"
-
-        await db.add_chips(self.guild_id, str(interaction.user.id), interaction.user.display_name, self.amount)
-
-        msg = random.choice(config.MESSAGES["chip_drop"]["claimed"]).format(
-            user=interaction.user.mention,
-            amount=self.amount,
-            emoji=config.CHIPS["emoji"],
-        )
-        await interaction.response.edit_message(content=msg, view=self)
-        self.stop()
-
-    async def on_timeout(self):
-        if not self.claimed and self.message:
-            expired = random.choice(config.MESSAGES["chip_drop"]["expired"])
-            for child in self.children:
-                child.disabled = True
-                child.label = "Expired"
+        # Check every minute
+        await asyncio.sleep(60)
+        
+        if not config.FEATURES.get("chip_drops"):
+            continue
+            
+        for guild in bot.guilds:
+            gid = str(guild.id)
             try:
-                await self.message.edit(content=expired, view=self)
-            except Exception:
-                pass
+                # Check for expired drops
+                await check_chip_drop_expired(gid)
+                
+                # Check if there's already an active drop
+                existing = await db.get_chip_drop(gid)
+                if existing:
+                    continue
+                
+                # Check cooldown from last claimed drop
+                last_drop = await db.get_state(gid, "last_chip_drop_claimed")
+                if last_drop:
+                    last_dt = datetime.fromisoformat(last_drop)
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=timezone.utc)
+                    hours_passed = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600
+                    
+                    # Get random cooldown for this guild
+                    cooldown = await db.get_state(gid, "chip_drop_cooldown_hours")
+                    if cooldown:
+                        if hours_passed < float(cooldown):
+                            continue
+                
+                # Check if there was any activity in last 30 minutes
+                last_msg = await db.get_state(gid, "last_message_time")
+                if not last_msg:
+                    continue
+                
+                last_msg_dt = datetime.fromisoformat(last_msg)
+                if last_msg_dt.tzinfo is None:
+                    last_msg_dt = last_msg_dt.replace(tzinfo=timezone.utc)
+                
+                mins_since_activity = (datetime.now(timezone.utc) - last_msg_dt).total_seconds() / 60
+                if mins_since_activity > config.CHIP_DROP["activity_window"]:
+                    continue
+                
+                # Check if we need to schedule a drop
+                scheduled = await db.get_state(gid, "chip_drop_scheduled_at")
+                if not scheduled:
+                    # Schedule a drop in 1-60 minutes
+                    delay = random.randint(config.CHIP_DROP["min_delay"], config.CHIP_DROP["max_delay"])
+                    drop_time = datetime.now(timezone.utc) + timedelta(minutes=delay)
+                    await db.set_state(gid, "chip_drop_scheduled_at", drop_time.isoformat())
+                else:
+                    # Check if scheduled time has passed
+                    sched_dt = datetime.fromisoformat(scheduled)
+                    if sched_dt.tzinfo is None:
+                        sched_dt = sched_dt.replace(tzinfo=timezone.utc)
+                    
+                    if datetime.now(timezone.utc) >= sched_dt:
+                        await do_chip_drop(gid)
+                        await db.delete_state(gid, "chip_drop_scheduled_at")
+                        
+            except Exception as e:
+                print(f"Chip drop cycle error in {guild.name}: {e}")
 
 
 # ======================== WORD GAME ========================
@@ -673,15 +827,15 @@ async def stats_cmd(interaction: discord.Interaction):
     gid = str(interaction.guild_id)
     total_users = await db.get_total_users(gid)
 
-    used_t = len(await db.get_used_questions(gid, "typology"))
-    used_c = len(await db.get_used_questions(gid, "casual"))
-    used_p = len(await db.get_used_questions(gid, "personality"))
-    total_t = len(config.TYPOLOGY_QUESTIONS)
-    total_c = len(config.SPARK_WYR) + len(config.SPARK_DEBATES) + len(config.SPARK_CHILL)
-    total_p = len(config.PERSONALITY_QUESTIONS)
+    used_warm = len(await db.get_used_questions(gid, "warm"))
+    used_chill = len(await db.get_used_questions(gid, "chill"))
+    used_typo = len(await db.get_used_questions(gid, "typology"))
+    total_warm = len(config.SPARK_WYR) + len(config.SPARK_DEBATES) + len(config.BUTTON_QUESTIONS)
+    total_chill = len(config.SPARK_CHILL) + len(config.PERSONALITY_QUESTIONS)
+    total_typo = len(config.TYPOLOGY_QUESTIONS) + len(config.PERSONAL_TYPOLOGY_QUESTIONS) + len(config.FRIEND_GROUP_QUESTIONS)
 
     next_q = await db.get_state(gid, "next_daily_question")
-    last_cd = await db.get_state(gid, "last_chip_drop")
+    last_cd = await db.get_state(gid, "last_chip_drop_claimed")
     last_cp = await db.get_state(gid, "last_code_purple")
     q_idx = await db.get_state(gid, "daily_question_index") or "0"
     next_type = DAILY_QUESTION_ORDER[int(q_idx) % len(DAILY_QUESTION_ORDER)]
@@ -696,9 +850,9 @@ async def stats_cmd(interaction: discord.Interaction):
 
     embed = discord.Embed(title="📊 Bot Statistics", color=0x00BFFF, timestamp=datetime.now(timezone.utc))
     embed.add_field(name="👥 Users", value=str(total_users), inline=True)
-    embed.add_field(name="❓ Typology Qs", value=f"{used_t}/{total_t}", inline=True)
-    embed.add_field(name="💬 Casual Qs", value=f"{used_c}/{total_c}", inline=True)
-    embed.add_field(name="🧠 Personality Qs", value=f"{used_p}/{total_p}", inline=True)
+    embed.add_field(name="🔥 Warm Qs", value=f"{used_warm}/{total_warm}", inline=True)
+    embed.add_field(name="🌙 Chill Qs", value=f"{used_chill}/{total_chill}", inline=True)
+    embed.add_field(name="✨ Typology Qs", value=f"{used_typo}/{total_typo}", inline=True)
     embed.add_field(name="📅 Next Question", value=f"{next_type.title()} {fmt(next_q)}", inline=True)
     embed.add_field(name="🥔 Last Chip Drop", value=fmt(last_cd), inline=True)
     embed.add_field(name="💜 Last Code Purple", value=fmt(last_cp), inline=True)
@@ -717,6 +871,7 @@ async def stats_cmd(interaction: discord.Interaction):
         app_commands.Choice(name="Typology Questions", value="typology"),
         app_commands.Choice(name="Code Purple", value="codepurple"),
         app_commands.Choice(name="Chip Drops", value="chipdrop"),
+        app_commands.Choice(name="Activity Rewards", value="activity_rewards"),
         app_commands.Choice(name="Word Game", value="wordgame"),
     ]
 )
@@ -752,11 +907,12 @@ async def viewchannels_cmd(interaction: discord.Interaction):
     channels = await db.get_all_channels(gid)
 
     features = {
-        "typology": "✨ Typology Daily",
-        "casual": "💬 Casual Question Daily",
-        "personality": "🧠 Personality Daily",
+        "warm": "🔥 Warm Questions",
+        "chill": "🌙 Chill Questions",
+        "typology": "✨ Typology Questions",
         "codepurple": "💜 Code Purple",
         "chipdrop": "🥔 Chip Drops",
+        "activity_rewards": "🏆 Activity Rewards",
         "wordgame": "📖 Word Game",
     }
 
@@ -921,7 +1077,7 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.3 - warm/chill/typology)")
+        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. (v1.4 - chip drops + activity rewards)")
 
 
 @bot.event
@@ -1020,9 +1176,54 @@ async def on_message(message: discord.Message):
         return
     gid = str(message.guild.id)
 
-    # Track activity for code purple & chatter rewards
+    # Track activity for code purple & chatter rewards & activity rewards
     await db.set_state(gid, "last_message_time", datetime.now(timezone.utc).isoformat())
     await db.increment_chatter(gid, str(message.author.id), message.author.display_name)
+    await db.increment_activity_message(gid, str(message.author.id), message.author.display_name)
+
+    # --- Chip Drop handling (grab or math answer) ---
+    drop = await db.get_chip_drop(gid)
+    if drop and str(message.channel.id) == drop["channel_id"]:
+        content = message.content.strip()
+        claimed = False
+        
+        if drop["drop_type"] == "grab" and content.lower() == "~grab":
+            claimed = True
+        elif drop["drop_type"] == "math":
+            # Check if answer matches (strip whitespace)
+            if content == drop["answer"]:
+                claimed = True
+        
+        if claimed:
+            amount = drop["amount"]
+            emoji = config.CHIPS["emoji"]
+            
+            await db.add_chips(gid, str(message.author.id), message.author.display_name, amount)
+            
+            # Edit original message to show claimed
+            try:
+                drop_channel = bot.get_channel(int(drop["channel_id"]))
+                if drop_channel:
+                    drop_msg = await drop_channel.fetch_message(int(drop["message_id"]))
+                    claimed_msg = random.choice(config.MESSAGES["chip_drop"]["claimed"]).format(
+                        user=message.author.mention,
+                        amount=amount,
+                        emoji=emoji
+                    )
+                    await drop_msg.edit(content=f"~~{drop_msg.content}~~\n\n{claimed_msg}")
+            except Exception:
+                pass
+            
+            # Delete the drop and set cooldown
+            await db.delete_chip_drop(gid)
+            await db.set_state(gid, "last_chip_drop_claimed", datetime.now(timezone.utc).isoformat())
+            
+            # Set random cooldown for next drop
+            cooldown_hours = random.uniform(
+                config.CHIP_DROP["min_cooldown_hours"],
+                config.CHIP_DROP["max_cooldown_hours"]
+            )
+            await db.set_state(gid, "chip_drop_cooldown_hours", str(cooldown_hours))
 
     # Word game — every message in the game channel adds a word
     game = await db.get_word_game(gid)
@@ -1070,6 +1271,27 @@ async def on_message(message: discord.Message):
                 await db.update_word_game_message(gid, str(new_msg.id))
 
     await bot.process_commands(message)
+
+
+@bot.event
+async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+    """Track VC join/leave for activity rewards"""
+    if member.bot:
+        return
+    
+    gid = str(member.guild.id)
+    
+    # User joined a voice channel
+    if before.channel is None and after.channel is not None:
+        await db.start_vc_session(gid, str(member.id), member.display_name)
+        print(f"[VC] {member.display_name} joined {after.channel.name}")
+    
+    # User left a voice channel
+    elif before.channel is not None and after.channel is None:
+        minutes = await db.end_vc_session(gid, str(member.id))
+        print(f"[VC] {member.display_name} left {before.channel.name} after {minutes} minutes")
+    
+    # User moved between channels (still in VC, no action needed)
 
 
 # ======================== RUN ========================

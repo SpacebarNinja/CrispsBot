@@ -34,6 +34,34 @@ async def init():
                 PRIMARY KEY (guild_id, user_id, date)
             );
 
+            CREATE TABLE IF NOT EXISTS daily_activity (
+                guild_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                username TEXT DEFAULT '',
+                message_points INTEGER DEFAULT 0,
+                vc_minutes INTEGER DEFAULT 0,
+                date TEXT NOT NULL,
+                PRIMARY KEY (guild_id, user_id, date)
+            );
+
+            CREATE TABLE IF NOT EXISTS vc_sessions (
+                guild_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                username TEXT DEFAULT '',
+                join_time TEXT NOT NULL,
+                PRIMARY KEY (guild_id, user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS active_chip_drop (
+                guild_id TEXT PRIMARY KEY,
+                channel_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                drop_type TEXT NOT NULL,
+                answer TEXT DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS question_usage (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 guild_id TEXT NOT NULL,
@@ -284,7 +312,7 @@ async def set_channel(guild_id: str, feature: str, channel_id: str):
 
 
 async def get_all_channels(guild_id: str) -> dict:
-    features = ["typology", "casual", "personality", "codepurple", "chipdrop", "wordgame"]
+    features = ["warm", "chill", "typology", "codepurple", "chipdrop", "activity_rewards", "wordgame"]
     result = {}
     for f in features:
         result[f] = await get_channel(guild_id, f)
@@ -354,5 +382,160 @@ async def update_word_game_message(guild_id: str, message_id: str):
         await conn.execute(
             "UPDATE word_games SET message_id = ? WHERE guild_id = ? AND active = 1",
             (message_id, guild_id)
+        )
+        await conn.commit()
+
+
+# ==================== DAILY ACTIVITY ====================
+
+async def increment_activity_message(guild_id: str, user_id: str, username: str):
+    """Add 1 message point for today"""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            """INSERT INTO daily_activity (guild_id, user_id, username, message_points, vc_minutes, date)
+               VALUES (?, ?, ?, 1, 0, ?)
+               ON CONFLICT(guild_id, user_id, date) DO UPDATE SET
+               message_points = message_points + 1, username = excluded.username""",
+            (guild_id, user_id, username, today)
+        )
+        await conn.commit()
+
+
+async def add_vc_minutes(guild_id: str, user_id: str, username: str, minutes: int):
+    """Add VC minutes for today"""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            """INSERT INTO daily_activity (guild_id, user_id, username, message_points, vc_minutes, date)
+               VALUES (?, ?, ?, 0, ?, ?)
+               ON CONFLICT(guild_id, user_id, date) DO UPDATE SET
+               vc_minutes = vc_minutes + ?, username = excluded.username""",
+            (guild_id, user_id, username, minutes, today, minutes)
+        )
+        await conn.commit()
+
+
+async def get_top_activity(guild_id: str, date: str) -> list[dict]:
+    """Get top 3 users by total points (messages + vc minutes)"""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            """SELECT user_id, username, message_points, vc_minutes, (message_points + vc_minutes) as total
+               FROM daily_activity
+               WHERE guild_id = ? AND date = ?
+               ORDER BY total DESC LIMIT 3""",
+            (guild_id, date)
+        )
+        rows = await cursor.fetchall()
+        return [{"user_id": r[0], "username": r[1], "message_points": r[2], "vc_minutes": r[3], "total": r[4]} for r in rows]
+
+
+async def clear_daily_activity(guild_id: str, date: str):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "DELETE FROM daily_activity WHERE guild_id = ? AND date = ?",
+            (guild_id, date)
+        )
+        await conn.commit()
+
+
+# ==================== VC SESSIONS ====================
+
+async def start_vc_session(guild_id: str, user_id: str, username: str):
+    """Record when a user joins VC"""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            """INSERT INTO vc_sessions (guild_id, user_id, username, join_time)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(guild_id, user_id) DO UPDATE SET
+               join_time = excluded.join_time, username = excluded.username""",
+            (guild_id, user_id, username, datetime.now(timezone.utc).isoformat())
+        )
+        await conn.commit()
+
+
+async def end_vc_session(guild_id: str, user_id: str) -> int:
+    """End VC session and return minutes spent"""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            "SELECT username, join_time FROM vc_sessions WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return 0
+        
+        username, join_time = row[0], row[1]
+        join_dt = datetime.fromisoformat(join_time)
+        if join_dt.tzinfo is None:
+            join_dt = join_dt.replace(tzinfo=timezone.utc)
+        
+        minutes = int((datetime.now(timezone.utc) - join_dt).total_seconds() / 60)
+        
+        # Delete session
+        await conn.execute(
+            "DELETE FROM vc_sessions WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id)
+        )
+        await conn.commit()
+        
+        # Add minutes to activity
+        if minutes > 0:
+            await add_vc_minutes(guild_id, user_id, username, minutes)
+        
+        return minutes
+
+
+async def get_all_vc_sessions(guild_id: str) -> list[dict]:
+    """Get all active VC sessions"""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            "SELECT user_id, username, join_time FROM vc_sessions WHERE guild_id = ?",
+            (guild_id,)
+        )
+        rows = await cursor.fetchall()
+        return [{"user_id": r[0], "username": r[1], "join_time": r[2]} for r in rows]
+
+
+# ==================== ACTIVE CHIP DROP ====================
+
+async def create_chip_drop(guild_id: str, channel_id: str, message_id: str, amount: int, drop_type: str, answer: str = ""):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            """INSERT INTO active_chip_drop (guild_id, channel_id, message_id, amount, drop_type, answer, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(guild_id) DO UPDATE SET
+               channel_id = excluded.channel_id, message_id = excluded.message_id,
+               amount = excluded.amount, drop_type = excluded.drop_type,
+               answer = excluded.answer, created_at = excluded.created_at""",
+            (guild_id, channel_id, message_id, amount, drop_type, answer, datetime.now(timezone.utc).isoformat())
+        )
+        await conn.commit()
+
+
+async def get_chip_drop(guild_id: str) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            "SELECT channel_id, message_id, amount, drop_type, answer, created_at FROM active_chip_drop WHERE guild_id = ?",
+            (guild_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "channel_id": row[0],
+            "message_id": row[1],
+            "amount": row[2],
+            "drop_type": row[3],
+            "answer": row[4],
+            "created_at": row[5],
+        }
+
+
+async def delete_chip_drop(guild_id: str):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "DELETE FROM active_chip_drop WHERE guild_id = ?",
+            (guild_id,)
         )
         await conn.commit()

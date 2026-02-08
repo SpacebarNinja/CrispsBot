@@ -23,9 +23,23 @@ CHIPS = {
 }
 
 CHIP_DROP = {
-    "min_interval": 1,    # minutes between drops (minimum)
-    "max_interval": 5,    # minutes between drops (maximum)
-    "button_timeout": 900, # seconds before drop expires (15 min)
+    "activity_window": 30,      # minutes - check for recent activity before scheduling
+    "min_delay": 1,             # minutes - minimum delay before drop after activity detected
+    "max_delay": 60,            # minutes - maximum delay before drop
+    "min_cooldown_hours": 1,    # hours - minimum cooldown after grab
+    "max_cooldown_hours": 10,   # hours - maximum cooldown after grab
+    "min_amount": 1000,         # minimum chips per drop
+    "max_amount": 10000,        # maximum chips per drop
+    "math_chance": 0.20,        # 20% chance for math question
+    "timeout": 900,             # seconds before drop expires (15 min)
+}
+
+ACTIVITY_REWARDS = {
+    "hour": 23,
+    "minute": 59,
+    "first_place": 3000,
+    "second_place": 2000,
+    "third_place": 1000,
 }
 
 CODE_PURPLE = {
@@ -40,6 +54,7 @@ FEATURES = {
     "chatter_rewards": True,
     "chip_drops": True,
     "code_purple": True,
+    "activity_rewards": True,
 }
 
 LEADERBOARD = {
@@ -82,16 +97,12 @@ EMBEDS = {
 
 MESSAGES = {
     "chip_drop": {
-        "announcements": [
-            "A wild chip drop appears! First to grab gets **+{amount} {emoji}**",
-            "Free chips up for grabs! Be the first to claim **+{amount} {emoji}**",
-            "🥔 Dropping some free chips real quick... grab it before someone else does!",
-            "🥔 Random chip drop event! Grab it before it's gone :)",
-        ],
+        "grab_announcement": "**RANDOM CHIP DROP EVENT:**\nFirst person to type `~grab` wins **+{amount} {emoji}** chips!",
+        "math_announcement": "**RANDOM CHIP DROP EVENT:**\nFirst person to answer `{equation}` wins **+{amount} {emoji}** chips!",
         "claimed": [
-            "**{user}** was first to snatch **+{amount} {emoji}**",
-            "Nice! **{user}** just grabbed **+{amount} {emoji}**",
-            "**{user}** swooped in and claimed **+{amount} {emoji}**",
+            "**{user}** was first to snatch **+{amount} {emoji}**!",
+            "Nice! **{user}** just grabbed **+{amount} {emoji}**!",
+            "**{user}** swooped in and claimed **+{amount} {emoji}**!",
         ],
         "expired": [
             "...Nobody claimed them. They're gone now",
@@ -99,6 +110,13 @@ MESSAGES = {
             "Too late, they're gone",
             "And... nobody grabbed them. Rip chips :(",
         ],
+    },
+    "activity_rewards": {
+        "announcement": "**Daily Activity Rewards 🏆**",
+        "first_place": "🥇 **{user}** — **+{amount} {emoji}** ({points} points)",
+        "second_place": "🥈 **{user}** — **+{amount} {emoji}** ({points} points)",
+        "third_place": "🥉 **{user}** — **+{amount} {emoji}** ({points} points)",
+        "no_activity": "No activity today. No rewards.",
     },
     "code_purple": [
         "Code purple...",
@@ -265,7 +283,7 @@ PERSONAL_TYPOLOGY_QUESTIONS = [
     "If your inferior function was suddenly your dominant, how would your life change?",
     "What type do you think you acted like as a child?",
     "What enneagram type do you think you'd be if raised differently?",
-    "Which typology system do you find most accurate for you — MBTI, enneagram, or something else?",
+    "Which typology system do you find most accurate for you — MBTI, enneagram, AP, or something else?",
     "What's a cognitive function you used to think you had but realized you don't?",
     "What's the most 'un-[your type]' thing about you?",
     "Which type do you find easiest to communicate with?",
