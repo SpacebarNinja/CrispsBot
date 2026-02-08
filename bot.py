@@ -1147,11 +1147,7 @@ async def placepingrolepicker_cmd(interaction: discord.Interaction, feature: app
         title=f"🔔 {feature_name} Notifications",
         description=f"React with 👍 to get the <@&{role_id}> role and be pinged for {feature_name}!\n\nUnreact to remove the role.",
         color=int(config.COLORS[feature.value], 16),
-        timestamp=datetime.now(timezone.utc),
     )
-    embed.set_footer(text="React below to toggle notifications")
-    if config.AUTHOR_NAME:
-        embed.set_author(name=config.AUTHOR_NAME)
 
     await interaction.response.defer(ephemeral=True)
     msg = await interaction.channel.send(embed=embed)
