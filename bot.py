@@ -12,6 +12,9 @@ import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import os
+import zlib
+import base64
+import json
 
 from dotenv import load_dotenv
 import config
@@ -820,7 +823,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.64.2"
+BOT_VERSION = "v1.65"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -903,6 +906,70 @@ async def chips_cmd(interaction: discord.Interaction, user: discord.Member, amou
     await interaction.response.send_message(
         f"Set {user.mention}'s chips to **{fmt_num(amount)} {config.CHIPS['emoji']}**", ephemeral=True
     )
+
+
+@bot.tree.command(name="exportchipsdata", description="Export all chip data as a compressed string (admin only)")
+@app_commands.default_permissions(administrator=True)
+async def exportchipsdata_cmd(interaction: discord.Interaction):
+    gid = str(interaction.guild_id)
+    # Get all chip data
+    all_chips = await db.get_all_chips(gid)
+    if not all_chips:
+        await interaction.response.send_message("No chip data to export.", ephemeral=True)
+        return
+    
+    # Create compact format: {user_id: chips}
+    data = {uid: chips for uid, _, chips in all_chips}
+    
+    # Compress and encode
+    json_str = json.dumps(data, separators=(',', ':'))
+    compressed = zlib.compress(json_str.encode('utf-8'), level=9)
+    encoded = base64.b64encode(compressed).decode('ascii')
+    
+    # Send as file if too long, otherwise as message
+    if len(encoded) > 1900:
+        await interaction.response.send_message(
+            f"**Chip Data Export** ({len(data)} users)\nData too long, sending as file:",
+            file=discord.File(fp=__import__('io').BytesIO(encoded.encode()), filename="chips_backup.txt"),
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            f"**Chip Data Export** ({len(data)} users)\n```\n{encoded}\n```\nUse `/importchipsdata` with this string to restore.",
+            ephemeral=True
+        )
+
+
+@bot.tree.command(name="importchipsdata", description="Import chip data from a compressed string (admin only)")
+@app_commands.default_permissions(administrator=True)
+@app_commands.describe(data="The compressed chip data string from /exportchipsdata")
+async def importchipsdata_cmd(interaction: discord.Interaction, data: str):
+    gid = str(interaction.guild_id)
+    
+    try:
+        # Decode and decompress
+        compressed = base64.b64decode(data.strip())
+        json_str = zlib.decompress(compressed).decode('utf-8')
+        chip_data = json.loads(json_str)
+        
+        if not isinstance(chip_data, dict):
+            raise ValueError("Invalid data format")
+        
+        # Import all chip data
+        count = 0
+        for uid, chips in chip_data.items():
+            await db.set_chips(gid, str(uid), f"User_{uid}", int(chips))
+            count += 1
+        
+        await interaction.response.send_message(
+            f"✅ Successfully imported **{count}** users' chip data!",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.response.send_message(
+            f"❌ Failed to import: Invalid data format. Make sure you copied the entire string from `/exportchipsdata`.\nError: {str(e)}",
+            ephemeral=True
+        )
 
 
 @bot.tree.command(name="forcedrop", description="Force a chip drop (admin only)")

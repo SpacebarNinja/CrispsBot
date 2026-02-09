@@ -260,6 +260,17 @@ async def get_total_users(guild_id: str) -> int:
         return row[0] if row else 0
 
 
+async def get_all_chips(guild_id: str) -> list[tuple]:
+    """Get all users' chip data for export. Returns list of (user_id, username, chips)."""
+    async with get_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT user_id, username, chips FROM users WHERE guild_id = ? AND chips > 0",
+            (guild_id,)
+        )
+        rows = await cursor.fetchall()
+        return [(r[0], r[1], r[2]) for r in rows]
+
+
 # ==================== DAILY CHATTER ====================
 
 async def increment_chatter(guild_id: str, user_id: str, username: str):
