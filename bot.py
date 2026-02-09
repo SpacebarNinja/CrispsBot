@@ -246,26 +246,36 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
     else:
         instinct_display = instinct or "?"
     
+    # Pad each line to 50 characters for consistent width
+    def pad_line(label: str, value: str) -> str:
+        line = f"**{label}:** {value}"
+        # Pad with invisible spaces using code block trick won't work, use regular padding
+        return line.ljust(50)
+    
     # Build embed
     color = get_mbti_color(mbti)
     
-    embed = discord.Embed(color=color)
+    # Use title for bigger/bolder name
+    embed = discord.Embed(
+        title=target.display_name,
+        color=color,
+    )
     
-    # Add fields in clean list format
+    # Add fields with padding for consistent width
     profile_text = (
-        f"**MBTI:** {mbti_display}\n"
-        f"**Enneagram:** {enneagram_display}\n"
-        f"**Tritype:** {tritype_display}\n"
-        f"**Instinct:** {instinct_display}\n"
-        f"**AP:** {ap_display}"
+        f"{pad_line('MBTI', mbti_display)}\n"
+        f"{pad_line('Enneagram', enneagram_display)}\n"
+        f"{pad_line('Tritype', tritype_display)}\n"
+        f"{pad_line('Instinct', instinct_display)}\n"
+        f"{pad_line('AP', ap_display)}"
     )
     embed.description = profile_text
     
     # User's profile picture on the right (thumbnail)
     embed.set_thumbnail(url=target.display_avatar.url)
     
-    # MBTI avatar as tiny author icon + display name
     # Store user ID in author URL (invisible) for !update tracking
+    # Author name is minimal/invisible, just for the URL
     id_url = f"https://typology.id/{target.id}"
     file = None
     if attach_mbti and mbti:
@@ -274,13 +284,13 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
             avatar_path = os.path.join(os.path.dirname(__file__), "MBTI_Avatars", f"{mbti_clean}.png")
             if os.path.exists(avatar_path):
                 file = discord.File(avatar_path, filename=f"{mbti_clean}.png")
-                embed.set_author(name=target.display_name, icon_url=f"attachment://{mbti_clean}.png", url=id_url)
+                embed.set_author(name="\u200b", icon_url=f"attachment://{mbti_clean}.png", url=id_url)
             else:
-                embed.set_author(name=target.display_name, url=id_url)
+                embed.set_author(name="\u200b", url=id_url)
         else:
-            embed.set_author(name=target.display_name, url=id_url)
+            embed.set_author(name="\u200b", url=id_url)
     else:
-        embed.set_author(name=target.display_name, url=id_url)
+        embed.set_author(name="\u200b", url=id_url)
     
     return embed, file
 
@@ -1013,7 +1023,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.68.4"
+BOT_VERSION = "v1.68.5"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1651,12 +1661,12 @@ async def on_message(message: discord.Message):
         # Build embed with MBTI avatar
         embed, file = build_typology_embed(target, profile, attach_mbti=True)
         
-        # Send card and delete command for clean UX
+        # Send card (no pings) and delete command for clean UX
         try:
             if file:
-                await message.channel.send(embed=embed, file=file)
+                await message.channel.send(embed=embed, file=file, allowed_mentions=discord.AllowedMentions.none())
             else:
-                await message.channel.send(embed=embed)
+                await message.channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
             await message.delete()
         except Exception:
             pass
