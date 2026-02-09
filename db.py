@@ -161,6 +161,18 @@ async def init():
                 word_count INTEGER DEFAULT 0,
                 active INTEGER DEFAULT 0
             );
+
+            CREATE TABLE IF NOT EXISTS typology_profiles (
+                guild_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                mbti TEXT DEFAULT '',
+                enneagram TEXT DEFAULT '',
+                tritype TEXT DEFAULT '',
+                instinct TEXT DEFAULT '',
+                ap TEXT DEFAULT '',
+                updated_at TEXT DEFAULT '',
+                PRIMARY KEY (guild_id, user_id)
+            );
         """)
         await conn.commit()
         
@@ -659,5 +671,49 @@ async def delete_chip_drop(guild_id: str):
         await conn.execute(
             "DELETE FROM active_chip_drop WHERE guild_id = ?",
             (guild_id,)
+        )
+        await conn.commit()
+
+
+# ==================== TYPOLOGY PROFILES ====================
+
+async def get_typology_profile(guild_id: str, user_id: str) -> dict | None:
+    """Get a user's typology profile."""
+    async with get_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT mbti, enneagram, tritype, instinct, ap, updated_at FROM typology_profiles WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "mbti": row[0] or "",
+            "enneagram": row[1] or "",
+            "tritype": row[2] or "",
+            "instinct": row[3] or "",
+            "ap": row[4] or "",
+            "updated_at": row[5] or "",
+        }
+
+
+async def set_typology_field(guild_id: str, user_id: str, field: str, value: str):
+    """Set a single field of a user's typology profile."""
+    valid_fields = ["mbti", "enneagram", "tritype", "instinct", "ap"]
+    if field not in valid_fields:
+        raise ValueError(f"Invalid field: {field}")
+    
+    async with get_connection() as conn:
+        # First ensure the row exists
+        await conn.execute(
+            """INSERT INTO typology_profiles (guild_id, user_id, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(guild_id, user_id) DO NOTHING""",
+            (guild_id, user_id, datetime.now(timezone.utc).isoformat())
+        )
+        # Then update the specific field
+        await conn.execute(
+            f"UPDATE typology_profiles SET {field} = ?, updated_at = ? WHERE guild_id = ? AND user_id = ?",
+            (value, datetime.now(timezone.utc).isoformat(), guild_id, user_id)
         )
         await conn.commit()

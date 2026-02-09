@@ -133,6 +133,95 @@ def format_story(words_str: str) -> str:
     return story
 
 
+# ======================== TYPOLOGY FORMATTING ========================
+
+# Superscript mapping for tritype wings
+SUPERSCRIPT_MAP = {"w": "ʷ", "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "?": "ˀ"}
+SUBSCRIPT_MAP = {"0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉"}
+
+
+def format_mbti(raw: str) -> str:
+    """Format MBTI input: '  isTp' → 'ISTP', 'xSFJ' → 'xSFJ' (preserves x)."""
+    raw = raw.strip().upper()
+    # Allow x for uncertain types
+    if len(raw) == 4 and all(c in "IESFNTJPX" for c in raw):
+        # Make the x lowercase for style: XSFJ → xSFJ
+        return raw.replace("X", "x")
+    return raw
+
+
+def format_enneagram(raw: str) -> str:
+    """Format enneagram: '3w2' stays as is, '3w?' allowed."""
+    raw = raw.strip().lower()
+    # Pattern: digit + w + digit or ?
+    if re.match(r"^[1-9]w[1-9?]$", raw):
+        return raw
+    return raw
+
+
+def format_tritype(raw: str) -> str:
+    """Format tritype: '963w874' → '9ʷ⁸6ʷ⁷3ʷ⁴', '963' → '963', allows ? for unknown wings."""
+    raw = raw.strip().lower().replace(" ", "")
+    
+    # Check if it's a 6-digit+wing format like '963w874' or '963874'
+    # Pattern: 3 core types + 'w' (optional) + 3 wings
+    match = re.match(r"^([1-9])([1-9])([1-9])w?([1-9?])([1-9?])([1-9?])$", raw)
+    if match:
+        c1, c2, c3, w1, w2, w3 = match.groups()
+        result = f"{c1}{SUPERSCRIPT_MAP['w']}{SUPERSCRIPT_MAP.get(w1, w1)}"
+        result += f"{c2}{SUPERSCRIPT_MAP['w']}{SUPERSCRIPT_MAP.get(w2, w2)}"
+        result += f"{c3}{SUPERSCRIPT_MAP['w']}{SUPERSCRIPT_MAP.get(w3, w3)}"
+        return result
+    
+    # Simple tritype without wings: '963'
+    if re.match(r"^[1-9]{3}$", raw):
+        return raw
+    
+    # Already formatted or other format - return as is
+    return raw
+
+
+def format_instinct(raw: str) -> str:
+    """Format instinctual stacking: 'so/sp', 'so/?', 'sp/sx', etc."""
+    raw = raw.strip().lower().replace(" ", "")
+    # Valid instincts
+    instincts = ["so", "sp", "sx", "?"]
+    parts = raw.split("/")
+    if len(parts) == 2 and parts[0] in instincts and parts[1] in instincts:
+        return f"{parts[0]}/{parts[1]}"
+    return raw
+
+
+def format_ap(raw: str) -> str:
+    """Format Attitudinal Psyche: 'fvle' → 'FVLE', allows ? for unknowns."""
+    raw = raw.strip().upper()
+    # Valid AP letters
+    valid = set("FVLE?")
+    if len(raw) == 4 and all(c in valid for c in raw):
+        return raw
+    return raw
+
+
+def get_mbti_color(mbti: str) -> int:
+    """Get embed color for an MBTI type. Returns Discord blurple for unknown/x types."""
+    if not mbti or "x" in mbti.lower():
+        return int(config.MBTI_DEFAULT_COLOR, 16)
+    mbti_upper = mbti.upper()
+    hex_color = config.MBTI_COLORS.get(mbti_upper, config.MBTI_DEFAULT_COLOR)
+    return int(hex_color, 16)
+
+
+def get_mbti_display(mbti: str) -> str:
+    """Get MBTI with cognitive functions: 'ESTJ' → 'ESTJ ᵀᵉˢⁱᴺᵉᶠⁱ'."""
+    if not mbti:
+        return "?"
+    mbti_upper = mbti.upper().replace("X", "x")
+    functions = config.MBTI_FUNCTIONS.get(mbti_upper.upper(), "")
+    if functions:
+        return f"{mbti_upper} {functions}"
+    return mbti_upper
+
+
 # ======================== POSTING FUNCTIONS ========================
 
 
@@ -861,7 +950,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.67.2"
+BOT_VERSION = "v1.68"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -929,6 +1018,72 @@ async def leaderboard_cmd(interaction: discord.Interaction):
             ),
         )
 
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="typology", description="View someone's typology card 📋")
+@app_commands.describe(user="The user to view (defaults to yourself)")
+async def typology_cmd(interaction: discord.Interaction, user: discord.Member = None):
+    """Display a typology profile card for a user."""
+    target = user or interaction.user
+    gid = str(interaction.guild_id)
+    uid = str(target.id)
+    
+    # Get profile data
+    profile = await db.get_typology_profile(gid, uid)
+    
+    # Extract values or use "?" for empty
+    mbti = profile.get("mbti", "") if profile else ""
+    enneagram = profile.get("enneagram", "") if profile else ""
+    tritype = profile.get("tritype", "") if profile else ""
+    instinct = profile.get("instinct", "") if profile else ""
+    ap = profile.get("ap", "") if profile else ""
+    
+    # Build display values
+    mbti_display = get_mbti_display(mbti) if mbti else "?"
+    enneagram_display = enneagram or "?"
+    tritype_display = tritype or "?"
+    ap_display = ap or "?"
+    
+    # Instinct with core type annotation if available
+    if instinct and enneagram:
+        core = enneagram[0] if enneagram else ""
+        dom = instinct.split("/")[0] if "/" in instinct else instinct
+        instinct_display = f"{instinct} ({dom}{core})" if core else instinct
+    else:
+        instinct_display = instinct or "?"
+    
+    # Build embed
+    color = get_mbti_color(mbti)
+    
+    embed = discord.Embed(
+        title=f"📋 {target.display_name}",
+        color=color,
+    )
+    
+    # Add fields in a clean list format
+    profile_text = (
+        f"**MBTI:** {mbti_display}\n"
+        f"**Enneagram:** {enneagram_display}\n"
+        f"**Tritype:** {tritype_display}\n"
+        f"**Instinct:** {instinct_display}\n"
+        f"**AP:** {ap_display}"
+    )
+    embed.description = profile_text
+    
+    # User's profile picture on the right
+    embed.set_thumbnail(url=target.display_avatar.url)
+    
+    # MBTI avatar as main image (if they have an MBTI set)
+    if mbti and mbti.upper().replace("X", "") in config.MBTI_TYPES:
+        # Use the local MBTI avatar file
+        mbti_clean = mbti.upper().replace("X", "")
+        # For now, we'll skip the MBTI avatar image since it requires file attachment
+        # This can be enhanced later with uploaded images
+        pass
+    
+    embed.set_footer(text="Use !update <field> <value> to update")
+    
     await interaction.response.send_message(embed=embed)
 
 
@@ -1464,6 +1619,93 @@ async def on_message(message: discord.Message):
     if not is_spam:
         await db.increment_chatter(gid, uid, message.author.display_name)
         await db.increment_activity_message(gid, uid, message.author.display_name)
+
+    # --- !update command for typology profiles ---
+    content_lower = message.content.lower().strip()
+    if content_lower.startswith("!update "):
+        # Must be a reply to another message
+        if not message.reference:
+            try:
+                await message.author.send("❌ You must reply to someone's message to update their typology!")
+                await message.delete()
+            except Exception:
+                pass
+            return
+        
+        # Get the target user from the replied message
+        try:
+            replied_msg = await message.channel.fetch_message(message.reference.message_id)
+            target_user = replied_msg.author
+            target_uid = str(target_user.id)
+        except Exception:
+            try:
+                await message.author.send("❌ Could not find the replied message.")
+                await message.delete()
+            except Exception:
+                pass
+            return
+        
+        # Parse the command: !update <field> <value>
+        parts = message.content.strip().split(maxsplit=2)
+        if len(parts) < 3:
+            try:
+                await message.author.send("❌ Usage: `!update <field> <value>`\nFields: mbti/m, enneagram/e, tritype/t, instinct/i, ap/a")
+                await message.delete()
+            except Exception:
+                pass
+            return
+        
+        field_input = parts[1].lower()
+        value_input = parts[2]
+        
+        # Map field aliases
+        field_map = {
+            "m": "mbti", "mbti": "mbti",
+            "e": "enneagram", "enneagram": "enneagram",
+            "t": "tritype", "tritype": "tritype",
+            "i": "instinct", "instinct": "instinct",
+            "a": "ap", "ap": "ap",
+        }
+        
+        field = field_map.get(field_input)
+        if not field:
+            try:
+                await message.author.send(f"❌ Unknown field: `{field_input}`\nValid fields: mbti/m, enneagram/e, tritype/t, instinct/i, ap/a")
+                await message.delete()
+            except Exception:
+                pass
+            return
+        
+        # Format the value based on field type
+        if field == "mbti":
+            formatted = format_mbti(value_input)
+        elif field == "enneagram":
+            formatted = format_enneagram(value_input)
+        elif field == "tritype":
+            formatted = format_tritype(value_input)
+        elif field == "instinct":
+            formatted = format_instinct(value_input)
+        elif field == "ap":
+            formatted = format_ap(value_input)
+        else:
+            formatted = value_input
+        
+        # Save to database
+        try:
+            await db.set_typology_field(gid, target_uid, field, formatted)
+            
+            # Send confirmation to user via DM
+            await message.author.send(f"✅ Updated **{target_user.display_name}**'s {field.upper()} to: **{formatted}**")
+            
+            # Delete the command message for clean UX
+            await message.delete()
+        except Exception as e:
+            try:
+                await message.author.send(f"❌ Error updating profile: {str(e)}")
+                await message.delete()
+            except Exception:
+                pass
+        return
 
     # --- Chip Drop handling (grab or math answer) ---
     drop = await db.get_chip_drop(gid)

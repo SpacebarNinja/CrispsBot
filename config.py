@@ -195,6 +195,33 @@ ENNEAGRAM_TYPES = [
     "7w6", "7w8", "8w7", "8w9", "9w8", "9w1",
 ]
 
+# Cognitive functions in superscript for each MBTI type
+MBTI_FUNCTIONS = {
+    "ESTJ": "ᵀᵉˢⁱᴺᵉᶠⁱ", "ISTJ": "ˢⁱᵀᵉᶠⁱᴺᵉ",
+    "ESFJ": "ᶠᵉˢⁱᴺᵉᵀⁱ", "ISFJ": "ˢⁱᶠᵉᵀⁱᴺᵉ",
+    "ENTJ": "ᵀᵉᴺⁱˢᵉᶠⁱ", "INTJ": "ᴺⁱᵀᵉᶠⁱˢᵉ",
+    "ENTP": "ᴺᵉᵀⁱˢⁱᶠᵉ", "INTP": "ᵀⁱᴺᵉˢⁱᶠᵉ",
+    "ENFJ": "ᶠᵉᴺⁱˢᵉᵀⁱ", "INFJ": "ᴺⁱᶠᵉᵀⁱˢᵉ",
+    "ENFP": "ᴺᵉᶠⁱᵀᵉˢⁱ", "INFP": "ᶠⁱᴺᵉˢⁱᵀᵉ",
+    "ESTP": "ˢᵉᵀⁱᶠᵉᴺⁱ", "ISTP": "ᵀⁱˢᵉᴺⁱᶠᵉ",
+    "ESFP": "ˢᵉᶠⁱᵀᵉᴺⁱ", "ISFP": "ᶠⁱˢᵉᴺⁱᵀᵉ",
+}
+
+# Embed colors by MBTI temperament (hex without #)
+MBTI_COLORS = {
+    # Explorers (SP) - Yellow/Gold
+    "ISTP": "E4AE3A", "ESTP": "E4AE3A", "ESFP": "E4AE3A", "ISFP": "E4AE3A",
+    # Sentinels (SJ) - Blue
+    "ISTJ": "4298B4", "ESTJ": "4298B4", "ESFJ": "4298B4", "ISFJ": "4298B4",
+    # Diplomats (NF) - Green
+    "INFJ": "33A474", "ENFJ": "33A474", "INFP": "33A474", "ENFP": "33A474",
+    # Analysts (NT) - Purple
+    "INTJ": "88619A", "ENTJ": "88619A", "INTP": "88619A", "ENTP": "88619A",
+}
+
+# Default color when MBTI is unknown or has 'x'
+MBTI_DEFAULT_COLOR = "5865F2"  # Discord blurple
+
 TYPOLOGY_QUESTIONS = [
     "Who would you prefer as your teacher?",
     "Who would you rather hang out with for an entire day?",
