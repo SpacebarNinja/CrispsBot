@@ -11,6 +11,7 @@ import random
 import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from typing import Optional
 import os
 import zlib
 import base64
@@ -1023,7 +1024,7 @@ async def leaderboard_cmd(interaction: discord.Interaction):
 
 @bot.tree.command(name="typology", description="View someone's typology card 📋")
 @app_commands.describe(user="The user to view (defaults to yourself)")
-async def typology_cmd(interaction: discord.Interaction, user: discord.Member = None):
+async def typology_cmd(interaction: discord.Interaction, user: Optional[discord.Member] = None):
     """Display a typology profile card for a user."""
     target = user or interaction.user
     gid = str(interaction.guild_id)
