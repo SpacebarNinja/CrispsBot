@@ -195,16 +195,16 @@ ENNEAGRAM_TYPES = [
     "7w6", "7w8", "8w7", "8w9", "9w8", "9w1",
 ]
 
-# Cognitive functions for each MBTI type (properly capitalized)
+# Cognitive functions for each MBTI type (small caps for i/e)
 MBTI_FUNCTIONS = {
-    "ESTJ": "TeSiNeFi", "ISTJ": "SiTeFiNe",
-    "ESFJ": "FeSiNeTi", "ISFJ": "SiFeTiNe",
-    "ENTJ": "TeNiSeFi", "INTJ": "NiTeFiSe",
-    "ENTP": "NeTiSiFe", "INTP": "TiNeSiFe",
-    "ENFJ": "FeNiSeTi", "INFJ": "NiFeTiSe",
-    "ENFP": "NeFiTeSi", "INFP": "FiNeSiTe",
-    "ESTP": "SeTiFeNi", "ISTP": "TiSeNiFe",
-    "ESFP": "SeFiTeNi", "ISFP": "FiSeNiTe",
+    "ESTJ": "TᴇSɪNᴇFɪ", "ISTJ": "SɪTᴇFɪNᴇ",
+    "ESFJ": "FᴇSɪNᴇTɪ", "ISFJ": "SɪFᴇTɪNᴇ",
+    "ENTJ": "TᴇNɪSᴇFɪ", "INTJ": "NɪTᴇFɪSᴇ",
+    "ENTP": "NᴇTɪSɪFᴇ", "INTP": "TɪNᴇSɪFᴇ",
+    "ENFJ": "FᴇNɪSᴇTɪ", "INFJ": "NɪFᴇTɪSᴇ",
+    "ENFP": "NᴇFɪTᴇSɪ", "INFP": "FɪNᴇSɪTᴇ",
+    "ESTP": "SᴇTɪFᴇNɪ", "ISTP": "TɪSᴇNɪFᴇ",
+    "ESFP": "SᴇFɪTᴇNɪ", "ISFP": "FɪSᴇNɪTᴇ",
 }
 
 # Embed colors by MBTI temperament (hex without #)
