@@ -67,7 +67,7 @@ HARDCODED = {
     # Blacklist categories (all channels in these categories are blacklisted from chip drops)
     "blacklist_categories": ["1446269291123966044", "1446277444372791458"],
     # Blacklist specific channels from chip drops
-    "blacklist_channels": ["1470287259054903511"],  # Forum channel
+    "blacklist_channels": [],
 }
 
 
