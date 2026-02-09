@@ -246,36 +246,26 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
     else:
         instinct_display = instinct or "?"
     
-    # Pad each line to 50 characters for consistent width
-    def pad_line(label: str, value: str) -> str:
-        line = f"**{label}:** {value}"
-        # Pad with invisible spaces using code block trick won't work, use regular padding
-        return line.ljust(50)
-    
     # Build embed
     color = get_mbti_color(mbti)
     
-    # Use title for bigger/bolder name
-    embed = discord.Embed(
-        title=target.display_name,
-        color=color,
-    )
+    embed = discord.Embed(color=color)
     
-    # Add fields with padding for consistent width
+    # Add fields in clean list format
     profile_text = (
-        f"{pad_line('MBTI', mbti_display)}\n"
-        f"{pad_line('Enneagram', enneagram_display)}\n"
-        f"{pad_line('Tritype', tritype_display)}\n"
-        f"{pad_line('Instinct', instinct_display)}\n"
-        f"{pad_line('AP', ap_display)}"
+        f"**MBTI:** {mbti_display}\n"
+        f"**Enneagram:** {enneagram_display}\n"
+        f"**Tritype:** {tritype_display}\n"
+        f"**Instinct:** {instinct_display}\n"
+        f"**AP:** {ap_display}"
     )
     embed.description = profile_text
     
     # User's profile picture on the right (thumbnail)
     embed.set_thumbnail(url=target.display_avatar.url)
     
+    # MBTI avatar as tiny author icon + display name
     # Store user ID in author URL (invisible) for !update tracking
-    # Author name is minimal/invisible, just for the URL
     id_url = f"https://typology.id/{target.id}"
     file = None
     if attach_mbti and mbti:
@@ -284,13 +274,13 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
             avatar_path = os.path.join(os.path.dirname(__file__), "MBTI_Avatars", f"{mbti_clean}.png")
             if os.path.exists(avatar_path):
                 file = discord.File(avatar_path, filename=f"{mbti_clean}.png")
-                embed.set_author(name="\u200b", icon_url=f"attachment://{mbti_clean}.png", url=id_url)
+                embed.set_author(name=target.display_name, icon_url=f"attachment://{mbti_clean}.png", url=id_url)
             else:
-                embed.set_author(name="\u200b", url=id_url)
+                embed.set_author(name=target.display_name, url=id_url)
         else:
-            embed.set_author(name="\u200b", url=id_url)
+            embed.set_author(name=target.display_name, url=id_url)
     else:
-        embed.set_author(name="\u200b", url=id_url)
+        embed.set_author(name=target.display_name, url=id_url)
     
     return embed, file
 
@@ -1023,7 +1013,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.68.5"
+BOT_VERSION = "v1.68.6"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1651,8 +1641,35 @@ async def on_message(message: discord.Message):
     # --- !typology or !t command to create typology cards ---
     content_lower = message.content.lower().strip()
     if content_lower.startswith("!typology") or content_lower.startswith("!t ") or content_lower == "!t":
-        # Parse target user from mentions or default to self
-        target = message.mentions[0] if message.mentions else message.author
+        # Parse target user: user ID, username, mention, or default to self
+        parts = message.content.strip().split(maxsplit=1)
+        target = None
+        
+        if len(parts) > 1:
+            arg = parts[1].strip()
+            # Remove mention formatting if present
+            if arg.startswith("<@") and arg.endswith(">"):
+                arg = arg.strip("<@!>")
+            
+            # Try as user ID first
+            if arg.isdigit():
+                try:
+                    target = await message.guild.fetch_member(int(arg))
+                except Exception:
+                    pass
+            
+            # Try as username/display name
+            if not target:
+                arg_lower = arg.lower()
+                for member in message.guild.members:
+                    if member.name.lower() == arg_lower or member.display_name.lower() == arg_lower:
+                        target = member
+                        break
+        
+        # Default to message author if no target found
+        if not target:
+            target = message.author
+        
         target_uid = str(target.id)
         
         # Get profile data
@@ -1661,12 +1678,12 @@ async def on_message(message: discord.Message):
         # Build embed with MBTI avatar
         embed, file = build_typology_embed(target, profile, attach_mbti=True)
         
-        # Send card (no pings) and delete command for clean UX
+        # Send card and delete command for clean UX
         try:
             if file:
-                await message.channel.send(embed=embed, file=file, allowed_mentions=discord.AllowedMentions.none())
+                await message.channel.send(embed=embed, file=file)
             else:
-                await message.channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                await message.channel.send(embed=embed)
             await message.delete()
         except Exception:
             pass
