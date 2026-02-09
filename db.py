@@ -337,6 +337,38 @@ async def reset_questions(guild_id: str, question_type: str):
         await conn.commit()
 
 
+async def get_all_question_usage(guild_id: str) -> dict[str, list[int]]:
+    """Get all question usage data for export. Returns {question_type: [indices]}."""
+    async with get_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT question_type, question_index FROM question_usage WHERE guild_id = ?",
+            (guild_id,)
+        )
+        rows = await cursor.fetchall()
+        result: dict[str, list[int]] = {}
+        for qtype, idx in rows:
+            if qtype not in result:
+                result[qtype] = []
+            result[qtype].append(idx)
+        return result
+
+
+async def import_question_usage(guild_id: str, data: dict[str, list[int]]):
+    """Import question usage data. Clears existing data first."""
+    async with get_connection() as conn:
+        # Clear existing question usage for this guild
+        await conn.execute("DELETE FROM question_usage WHERE guild_id = ?", (guild_id,))
+        # Import new data
+        now = datetime.now(timezone.utc).isoformat()
+        for qtype, indices in data.items():
+            for idx in indices:
+                await conn.execute(
+                    "INSERT INTO question_usage (guild_id, question_type, question_index, used_at) VALUES (?, ?, ?, ?)",
+                    (guild_id, qtype, idx, now)
+                )
+        await conn.commit()
+
+
 # ==================== BOT STATE ====================
 
 async def get_state(guild_id: str, key: str) -> str | None:

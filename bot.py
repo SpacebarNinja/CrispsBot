@@ -135,27 +135,34 @@ def format_story(words_str: str) -> str:
 
 
 async def post_warm(guild_id: str):
-    """Post a warm question (WYR, Debates, or Button)."""
+    """Post a warm question (WYR, Debates, or Button) using type+question bags."""
     channel_id = HARDCODED["channel_warm"]
     channel = bot.get_channel(int(channel_id))
     if not channel:
         print(f"[Warm] Could not find channel {channel_id}")
         return
 
-    all_q = (
-        [(q, "Would You Rather") for q in config.SPARK_WYR]
-        + [(q, "Debate Time") for q in config.SPARK_DEBATES]
-        + [(q, "Press The Button") for q in config.BUTTON_QUESTIONS]
-    )
-
-    used = await db.get_used_questions(guild_id, "warm")
-    if len(used) >= len(all_q):
-        await db.reset_questions(guild_id, "warm")
-        used = []
-    available = [i for i in range(len(all_q)) if i not in used]
-    idx = random.choice(available)
-    await db.mark_question_used(guild_id, "warm", idx)
-    question, category = all_q[idx]
+    # Type bag: pick category first (cycles through all 3 before repeating)
+    categories = ["wyr", "debate", "button"]
+    category_map = {
+        "wyr": (config.SPARK_WYR, "warm_wyr", "Would You Rather"),
+        "debate": (config.SPARK_DEBATES, "warm_debate", "Debate Time"),
+        "button": (config.BUTTON_QUESTIONS, "warm_button", "Press The Button"),
+    }
+    
+    used_types = await db.get_used_questions(guild_id, "warm_type")
+    if len(used_types) >= len(categories):
+        await db.reset_questions(guild_id, "warm_type")
+        used_types = []
+    available_types = [i for i in range(len(categories)) if i not in used_types]
+    type_idx = random.choice(available_types)
+    await db.mark_question_used(guild_id, "warm_type", type_idx)
+    
+    selected_cat = categories[type_idx]
+    questions, qtype_key, display_name = category_map[selected_cat]
+    
+    # Question bag: pick question from selected category
+    question = await get_unused_question(guild_id, qtype_key, questions)
 
     # Increment and get question counter
     count_str = await db.get_state(guild_id, "warm_question_count") or "0"
@@ -166,7 +173,7 @@ async def post_warm(guild_id: str):
         config.EMBEDS["warm"]["title"],
         question,
         "warm",
-        footer=f"{category} (#{count})",
+        footer=f"{display_name} (#{count})",
     )
 
     ping_role_id = HARDCODED["ping_role_warm"]
@@ -175,26 +182,33 @@ async def post_warm(guild_id: str):
 
 
 async def post_chill(guild_id: str):
-    """Post a chill question (Chill or Personality lifestyle)."""
+    """Post a chill question (Chill or Lifestyle) using type+question bags."""
     channel_id = HARDCODED["channel_chill"]
     channel = bot.get_channel(int(channel_id))
     if not channel:
         print(f"[Chill] Could not find channel {channel_id}")
         return
 
-    all_q = (
-        [(q, "Chill Vibes") for q in config.SPARK_CHILL]
-        + [(q, "Lifestyle") for q in config.PERSONALITY_QUESTIONS]
-    )
-
-    used = await db.get_used_questions(guild_id, "chill")
-    if len(used) >= len(all_q):
-        await db.reset_questions(guild_id, "chill")
-        used = []
-    available = [i for i in range(len(all_q)) if i not in used]
-    idx = random.choice(available)
-    await db.mark_question_used(guild_id, "chill", idx)
-    question, category = all_q[idx]
+    # Type bag: pick category first (cycles through both before repeating)
+    categories = ["chill", "lifestyle"]
+    category_map = {
+        "chill": (config.SPARK_CHILL, "chill_chill", "Chill Vibes"),
+        "lifestyle": (config.PERSONALITY_QUESTIONS, "chill_lifestyle", "Lifestyle"),
+    }
+    
+    used_types = await db.get_used_questions(guild_id, "chill_type")
+    if len(used_types) >= len(categories):
+        await db.reset_questions(guild_id, "chill_type")
+        used_types = []
+    available_types = [i for i in range(len(categories)) if i not in used_types]
+    type_idx = random.choice(available_types)
+    await db.mark_question_used(guild_id, "chill_type", type_idx)
+    
+    selected_cat = categories[type_idx]
+    questions, qtype_key, display_name = category_map[selected_cat]
+    
+    # Question bag: pick question from selected category
+    question = await get_unused_question(guild_id, qtype_key, questions)
 
     # Increment and get question counter
     count_str = await db.get_state(guild_id, "chill_question_count") or "0"
@@ -205,7 +219,7 @@ async def post_chill(guild_id: str):
         config.EMBEDS["chill"]["title"],
         question,
         "chill",
-        footer=f"{category} (#{count})",
+        footer=f"{display_name} (#{count})",
     )
 
     ping_role_id = HARDCODED["ping_role_chill"]
@@ -214,15 +228,25 @@ async def post_chill(guild_id: str):
 
 
 async def post_typology(guild_id: str):
-    """Post a typology question (Comparing types, Personal typology, or Friend group)."""
+    """Post a typology question (Comparing types, Personal typology, or Friend group) using type+question bags."""
     channel_id = HARDCODED["channel_typology"]
     channel = bot.get_channel(int(channel_id))
     if not channel:
         print(f"[Typology] Could not find channel {channel_id}")
         return
 
-    # Randomly select from typology sub-categories
-    category = random.choice(["comparing", "personal", "friendgroup"])
+    # Type bag: pick category first (cycles through all 3 before repeating)
+    categories = ["comparing", "personal", "friendgroup"]
+    
+    used_types = await db.get_used_questions(guild_id, "typology_type")
+    if len(used_types) >= len(categories):
+        await db.reset_questions(guild_id, "typology_type")
+        used_types = []
+    available_types = [i for i in range(len(categories)) if i not in used_types]
+    type_idx = random.choice(available_types)
+    await db.mark_question_used(guild_id, "typology_type", type_idx)
+    
+    category = categories[type_idx]
     
     if category == "comparing":
         # Generate MBTI x Enneagram comparison question
@@ -823,7 +847,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.65.1"
+BOT_VERSION = "v1.66"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -908,66 +932,94 @@ async def chips_cmd(interaction: discord.Interaction, user: discord.Member, amou
     )
 
 
-@bot.tree.command(name="exportchipsdata", description="Export all chip data as a compressed string (admin only)")
+@bot.tree.command(name="exportdata", description="Export all bot data (chips + question bags) as a compressed string (admin only)")
 @app_commands.default_permissions(administrator=True)
-async def exportchipsdata_cmd(interaction: discord.Interaction):
+async def exportdata_cmd(interaction: discord.Interaction):
     gid = str(interaction.guild_id)
+    
     # Get all chip data
     all_chips = await db.get_all_chips(gid)
-    if not all_chips:
-        await interaction.response.send_message("No chip data to export.", ephemeral=True)
+    chips_data = {uid: chips for uid, _, chips in all_chips}
+    
+    # Get all question usage (bags state)
+    questions_data = await db.get_all_question_usage(gid)
+    
+    # Combine into single export
+    export_data = {
+        "chips": chips_data,
+        "questions": questions_data,
+    }
+    
+    if not chips_data and not questions_data:
+        await interaction.response.send_message("No data to export.", ephemeral=True)
         return
     
-    # Create compact format: {user_id: chips}
-    data = {uid: chips for uid, _, chips in all_chips}
-    
     # Compress and encode
-    json_str = json.dumps(data, separators=(',', ':'))
+    json_str = json.dumps(export_data, separators=(',', ':'))
     compressed = zlib.compress(json_str.encode('utf-8'), level=9)
     encoded = base64.b64encode(compressed).decode('ascii')
+    
+    # Count stats
+    chip_count = len(chips_data)
+    bag_count = len(questions_data)
     
     # Send as file if too long, otherwise as message
     if len(encoded) > 1900:
         await interaction.response.send_message(
-            f"**Chip Data Export** ({len(data)} users)\nData too long, sending as file:",
-            file=discord.File(fp=__import__('io').BytesIO(encoded.encode()), filename="chips_backup.txt"),
+            f"**Data Export** ({chip_count} users, {bag_count} question bags)\nData too long, sending as file:",
+            file=discord.File(fp=__import__('io').BytesIO(encoded.encode()), filename="bot_backup.txt"),
             ephemeral=True
         )
     else:
         await interaction.response.send_message(
-            f"**Chip Data Export** ({len(data)} users)\n```\n{encoded}\n```\nUse `/importchipsdata` with this string to restore.",
+            f"**Data Export** ({chip_count} users, {bag_count} question bags)\n```\n{encoded}\n```\nUse `/importdata` with this string to restore.",
             ephemeral=True
         )
 
 
-@bot.tree.command(name="importchipsdata", description="Import chip data from a compressed string (admin only)")
+@bot.tree.command(name="importdata", description="Import bot data (chips + question bags) from a compressed string (admin only)")
 @app_commands.default_permissions(administrator=True)
-@app_commands.describe(data="The compressed chip data string from /exportchipsdata")
-async def importchipsdata_cmd(interaction: discord.Interaction, data: str):
+@app_commands.describe(data="The compressed data string from /exportdata")
+async def importdata_cmd(interaction: discord.Interaction, data: str):
     gid = str(interaction.guild_id)
     
     try:
         # Decode and decompress
         compressed = base64.b64decode(data.strip())
         json_str = zlib.decompress(compressed).decode('utf-8')
-        chip_data = json.loads(json_str)
+        import_data = json.loads(json_str)
         
-        if not isinstance(chip_data, dict):
+        if not isinstance(import_data, dict):
             raise ValueError("Invalid data format")
         
-        # Import all chip data
-        count = 0
-        for uid, chips in chip_data.items():
+        # Handle both old format (chips only) and new format (chips + questions)
+        if "chips" in import_data:
+            # New format
+            chips_data = import_data.get("chips", {})
+            questions_data = import_data.get("questions", {})
+        else:
+            # Old format (backwards compatible) - just chips
+            chips_data = import_data
+            questions_data = {}
+        
+        # Import chip data
+        chip_count = 0
+        for uid, chips in chips_data.items():
             await db.set_chips(gid, str(uid), f"User_{uid}", int(chips))
-            count += 1
+            chip_count += 1
+        
+        # Import question usage data
+        if questions_data:
+            await db.import_question_usage(gid, questions_data)
+        bag_count = len(questions_data)
         
         await interaction.response.send_message(
-            f"✅ Successfully imported **{count}** users' chip data!",
+            f"✅ Successfully imported **{chip_count}** users' chips and **{bag_count}** question bags!",
             ephemeral=True
         )
     except Exception as e:
         await interaction.response.send_message(
-            f"❌ Failed to import: Invalid data format. Make sure you copied the entire string from `/exportchipsdata`.\nError: {str(e)}",
+            f"❌ Failed to import: Invalid data format. Make sure you copied the entire string from `/exportdata`.\nError: {str(e)}",
             ephemeral=True
         )
 
