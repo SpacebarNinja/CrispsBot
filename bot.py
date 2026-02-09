@@ -806,15 +806,7 @@ async def auto_start_word_game(gid: str) -> bool:
     except Exception:
         pass
     
-    # Send notification embed
-    notify_embed = discord.Embed(
-        title="⏰ No one started a new story!",
-        description="It's been over 3 hours since the last game ended.\nStarting a new story automatically!",
-        color=0x9B59B6
-    )
-    await channel.send(embed=notify_embed)
-    
-    # Start new game
+    # Start new game silently
     embed = build_word_game_embed("", 0, True)
     view = WordGameActiveView()
     msg = await channel.send(embed=embed, view=view)
@@ -828,7 +820,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.61"
+BOT_VERSION = "v1.62"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
