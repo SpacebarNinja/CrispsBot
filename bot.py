@@ -224,13 +224,13 @@ def get_mbti_color(mbti: str) -> int:
 
 
 def get_mbti_display(mbti: str) -> str:
-    """Get MBTI with cognitive functions: 'ESTJ' → 'ESTJ ᵀᵉˢⁱᴺᵉᶠⁱ'."""
+    """Get MBTI with cognitive functions: 'ESTJ' → 'ESTJ (𝘛𝘦𝘚𝘪𝘕𝘦𝘍𝘪)'."""
     if not mbti:
         return "?"
     mbti_upper = mbti.upper().replace("X", "x")
     functions = config.MBTI_FUNCTIONS.get(mbti_upper.upper(), "")
     if functions:
-        return f"{mbti_upper} {functions}"
+        return f"{mbti_upper} ({functions})"
     return mbti_upper
 
 
@@ -1024,7 +1024,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.69"
+BOT_VERSION = "v1.69.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
