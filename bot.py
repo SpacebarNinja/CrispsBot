@@ -223,6 +223,66 @@ def get_mbti_display(mbti: str) -> str:
     return mbti_upper
 
 
+def build_typology_embed(target: discord.Member, profile: dict | None, attach_mbti: bool = False) -> tuple[discord.Embed, discord.File | None]:
+    """Build a typology profile embed. Returns (embed, file) where file is the MBTI avatar if available."""
+    # Extract values or use "?" for empty
+    mbti = profile.get("mbti", "") if profile else ""
+    enneagram = profile.get("enneagram", "") if profile else ""
+    tritype = profile.get("tritype", "") if profile else ""
+    instinct = profile.get("instinct", "") if profile else ""
+    ap = profile.get("ap", "") if profile else ""
+    
+    # Build display values
+    mbti_display = get_mbti_display(mbti) if mbti else "?"
+    enneagram_display = enneagram or "?"
+    tritype_display = tritype or "?"
+    ap_display = ap or "?"
+    
+    # Instinct with core type annotation if available
+    if instinct and enneagram:
+        core = enneagram[0] if enneagram else ""
+        dom = instinct.split("/")[0] if "/" in instinct else instinct
+        instinct_display = f"{instinct} ({dom}{core})" if core else instinct
+    else:
+        instinct_display = instinct or "?"
+    
+    # Build embed
+    color = get_mbti_color(mbti)
+    
+    embed = discord.Embed(
+        title=f"📋 {target.display_name}",
+        color=color,
+    )
+    
+    # Add fields in a clean list format
+    profile_text = (
+        f"**MBTI:** {mbti_display}\n"
+        f"**Enneagram:** {enneagram_display}\n"
+        f"**Tritype:** {tritype_display}\n"
+        f"**Instinct:** {instinct_display}\n"
+        f"**AP:** {ap_display}"
+    )
+    embed.description = profile_text
+    
+    # User's profile picture on the right
+    embed.set_thumbnail(url=target.display_avatar.url)
+    
+    # Footer stores user ID for !update tracking
+    embed.set_footer(text=f"Reply with !update <field> <value> • ID:{target.id}")
+    
+    # MBTI avatar image
+    file = None
+    if attach_mbti and mbti:
+        mbti_clean = mbti.upper().replace("X", "").replace("x", "")
+        if mbti_clean in config.MBTI_TYPES:
+            avatar_path = os.path.join(os.path.dirname(__file__), "MBTI_Avatars", f"{mbti_clean}.png")
+            if os.path.exists(avatar_path):
+                file = discord.File(avatar_path, filename=f"{mbti_clean}.png")
+                embed.set_image(url=f"attachment://{mbti_clean}.png")
+    
+    return embed, file
+
+
 # ======================== POSTING FUNCTIONS ========================
 
 
@@ -951,7 +1011,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.68"
+BOT_VERSION = "v1.68.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1022,10 +1082,10 @@ async def leaderboard_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="typology", description="View someone's typology card 📋")
-@app_commands.describe(user="The user to view (defaults to yourself)")
+@bot.tree.command(name="typology", description="Add someone's typology card")
+@app_commands.describe(user="The user to create a card for (defaults to yourself)")
 async def typology_cmd(interaction: discord.Interaction, user: Optional[discord.Member] = None):
-    """Display a typology profile card for a user."""
+    """Create a typology profile card for a user."""
     target = user or interaction.user
     gid = str(interaction.guild_id)
     uid = str(target.id)
@@ -1033,59 +1093,13 @@ async def typology_cmd(interaction: discord.Interaction, user: Optional[discord.
     # Get profile data
     profile = await db.get_typology_profile(gid, uid)
     
-    # Extract values or use "?" for empty
-    mbti = profile.get("mbti", "") if profile else ""
-    enneagram = profile.get("enneagram", "") if profile else ""
-    tritype = profile.get("tritype", "") if profile else ""
-    instinct = profile.get("instinct", "") if profile else ""
-    ap = profile.get("ap", "") if profile else ""
+    # Build embed with MBTI avatar
+    embed, file = build_typology_embed(target, profile, attach_mbti=True)
     
-    # Build display values
-    mbti_display = get_mbti_display(mbti) if mbti else "?"
-    enneagram_display = enneagram or "?"
-    tritype_display = tritype or "?"
-    ap_display = ap or "?"
-    
-    # Instinct with core type annotation if available
-    if instinct and enneagram:
-        core = enneagram[0] if enneagram else ""
-        dom = instinct.split("/")[0] if "/" in instinct else instinct
-        instinct_display = f"{instinct} ({dom}{core})" if core else instinct
+    if file:
+        await interaction.response.send_message(embed=embed, file=file)
     else:
-        instinct_display = instinct or "?"
-    
-    # Build embed
-    color = get_mbti_color(mbti)
-    
-    embed = discord.Embed(
-        title=f"📋 {target.display_name}",
-        color=color,
-    )
-    
-    # Add fields in a clean list format
-    profile_text = (
-        f"**MBTI:** {mbti_display}\n"
-        f"**Enneagram:** {enneagram_display}\n"
-        f"**Tritype:** {tritype_display}\n"
-        f"**Instinct:** {instinct_display}\n"
-        f"**AP:** {ap_display}"
-    )
-    embed.description = profile_text
-    
-    # User's profile picture on the right
-    embed.set_thumbnail(url=target.display_avatar.url)
-    
-    # MBTI avatar as main image (if they have an MBTI set)
-    if mbti and mbti.upper().replace("X", "") in config.MBTI_TYPES:
-        # Use the local MBTI avatar file
-        mbti_clean = mbti.upper().replace("X", "")
-        # For now, we'll skip the MBTI avatar image since it requires file attachment
-        # This can be enhanced later with uploaded images
-        pass
-    
-    embed.set_footer(text="Use !update <field> <value> to update")
-    
-    await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
 
 # ---------- Admin ----------
@@ -1624,23 +1638,62 @@ async def on_message(message: discord.Message):
     # --- !update command for typology profiles ---
     content_lower = message.content.lower().strip()
     if content_lower.startswith("!update "):
-        # Must be a reply to another message
+        # Must be a reply to a typology card (bot's message)
         if not message.reference:
+            confirm = await message.channel.send(f"{message.author.mention} ❌ Reply to a typology card to update it!", delete_after=5)
             try:
-                await message.author.send("❌ You must reply to someone's message to update their typology!")
                 await message.delete()
             except Exception:
                 pass
             return
         
-        # Get the target user from the replied message
+        # Get the replied message
         try:
             replied_msg = await message.channel.fetch_message(message.reference.message_id)
-            target_user = replied_msg.author
-            target_uid = str(target_user.id)
         except Exception:
+            confirm = await message.channel.send(f"{message.author.mention} ❌ Could not find that message.", delete_after=5)
             try:
-                await message.author.send("❌ Could not find the replied message.")
+                await message.delete()
+            except Exception:
+                pass
+            return
+        
+        # Must be a bot message with an embed containing our footer format
+        if replied_msg.author.id != bot.user.id or not replied_msg.embeds:
+            confirm = await message.channel.send(f"{message.author.mention} ❌ Reply to a typology card created by me!", delete_after=5)
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return
+        
+        # Extract user ID from footer
+        embed = replied_msg.embeds[0]
+        if not embed.footer or not embed.footer.text or "ID:" not in embed.footer.text:
+            confirm = await message.channel.send(f"{message.author.mention} ❌ That doesn't look like a typology card.", delete_after=5)
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return
+        
+        # Parse user ID from footer: "Reply with !update <field> <value> • ID:123456789"
+        try:
+            target_uid = embed.footer.text.split("ID:")[1].strip()
+        except Exception:
+            confirm = await message.channel.send(f"{message.author.mention} ❌ Could not parse user ID from card.", delete_after=5)
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return
+        
+        # Get target member
+        try:
+            target_user = await message.guild.fetch_member(int(target_uid))
+        except Exception:
+            confirm = await message.channel.send(f"{message.author.mention} ❌ Could not find that user in the server.", delete_after=5)
+            try:
                 await message.delete()
             except Exception:
                 pass
@@ -1649,8 +1702,8 @@ async def on_message(message: discord.Message):
         # Parse the command: !update <field> <value>
         parts = message.content.strip().split(maxsplit=2)
         if len(parts) < 3:
+            confirm = await message.channel.send(f"{message.author.mention} ❌ Usage: `!update <field> <value>`\nFields: mbti/m, enneagram/e, tritype/t, instinct/i, ap/a", delete_after=8)
             try:
-                await message.author.send("❌ Usage: `!update <field> <value>`\nFields: mbti/m, enneagram/e, tritype/t, instinct/i, ap/a")
                 await message.delete()
             except Exception:
                 pass
@@ -1670,8 +1723,8 @@ async def on_message(message: discord.Message):
         
         field = field_map.get(field_input)
         if not field:
+            confirm = await message.channel.send(f"{message.author.mention} ❌ Unknown field: `{field_input}`\nValid: mbti/m, enneagram/e, tritype/t, instinct/i, ap/a", delete_after=8)
             try:
-                await message.author.send(f"❌ Unknown field: `{field_input}`\nValid fields: mbti/m, enneagram/e, tritype/t, instinct/i, ap/a")
                 await message.delete()
             except Exception:
                 pass
@@ -1695,14 +1748,24 @@ async def on_message(message: discord.Message):
         try:
             await db.set_typology_field(gid, target_uid, field, formatted)
             
-            # Send confirmation to user via DM
-            await message.author.send(f"✅ Updated **{target_user.display_name}**'s {field.upper()} to: **{formatted}**")
+            # Get updated profile and rebuild embed
+            profile = await db.get_typology_profile(gid, target_uid)
+            new_embed, new_file = build_typology_embed(target_user, profile, attach_mbti=True)
             
-            # Delete the command message for clean UX
+            # Edit the original card message
+            if new_file:
+                await replied_msg.edit(embed=new_embed, attachments=[new_file])
+            else:
+                await replied_msg.edit(embed=new_embed)
+            
+            # Send ephemeral-style confirmation (auto-deletes)
+            confirm = await message.channel.send(f"{message.author.mention} ✅ Updated **{target_user.display_name}**'s {field.upper()} to: **{formatted}**", delete_after=5)
+            
+            # Delete the command message
             await message.delete()
         except Exception as e:
+            confirm = await message.channel.send(f"{message.author.mention} ❌ Error: {str(e)}", delete_after=8)
             try:
-                await message.author.send(f"❌ Error updating profile: {str(e)}")
                 await message.delete()
             except Exception:
                 pass
