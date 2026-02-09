@@ -66,6 +66,8 @@ HARDCODED = {
     
     # Blacklist categories (all channels in these categories are blacklisted from chip drops)
     "blacklist_categories": ["1446269291123966044", "1446277444372791458"],
+    # Blacklist specific channels from chip drops
+    "blacklist_channels": ["1470287259054903511"],  # Forum channel
 }
 
 
@@ -345,9 +347,12 @@ async def do_chip_drop(guild_id: str, channel_id: str = None):
         print(f"[ChipDrop] Could not find channel {channel_id}")
         return
     
-    # Check if channel is in a blacklisted category
+    # Check if channel is in a blacklisted category or is a blacklisted channel
     if channel.category_id and str(channel.category_id) in HARDCODED["blacklist_categories"]:
         print(f"[ChipDrop] Channel {channel_id} is in blacklisted category, skipping")
+        return
+    if str(channel_id) in HARDCODED["blacklist_channels"]:
+        print(f"[ChipDrop] Channel {channel_id} is blacklisted, skipping")
         return
 
     # Check if there's already an active drop
@@ -856,7 +861,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.67"
+BOT_VERSION = "v1.67.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")

@@ -95,8 +95,8 @@ EMBEDS = {
 
 MESSAGES = {
     "chip_drop": {
-        "grab_announcement": "**RANDOM CHIP DROP EVENT:**\nFirst person to type `~grab` wins **+{amount} {emoji}** chips!",
-        "math_announcement": "**RANDOM CHIP DROP EVENT:**\nFirst person to answer `{equation}` wins **+{amount} {emoji}** chips!",
+        "grab_announcement": "First person to type `~grab` wins **+{amount} {emoji}** chips!",
+        "math_announcement": "First person to answer `{equation}` wins **+{amount} {emoji}** chips!",
         "claimed": [
             "**{user}** was first to snatch **+{amount} {emoji}**!",
             "Nice! **{user}** just grabbed **+{amount} {emoji}**!",
