@@ -584,6 +584,13 @@ async def schedule_loop():
         if now_manila.minute == 0:
             await check_code_purple(gid)
 
+        # --- Word Game Auto-Start (check every 10 minutes) ---
+        if now_manila.minute % 10 == 0:
+            try:
+                await auto_start_word_game(gid)
+            except Exception as e:
+                print(f"Error checking word game auto-start: {e}")
+
 
 @schedule_loop.before_loop
 async def before_schedule():
@@ -704,6 +711,9 @@ class WordGameActiveView(discord.ui.View):
         await interaction.response.defer()
         await db.end_word_game(gid)
         game = await db.get_word_game(gid)
+        
+        # Track when game ended (for auto-restart detection)
+        await db.set_state(gid, "last_wordgame_activity", datetime.now(timezone.utc).isoformat())
 
         # Delete current message
         try:
@@ -749,11 +759,76 @@ class WordGameStartView(discord.ui.View):
         await db.create_word_game(gid, str(interaction.channel.id), str(msg.id))
 
 
+async def auto_start_word_game(gid: str) -> bool:
+    """Auto-start a word game if it's been waiting too long. Returns True if started."""
+    game = await db.get_word_game(gid)
+    if not game:
+        return False
+    
+    # Only auto-start if game exists but is NOT active (waiting for someone to start)
+    if game["active"]:
+        return False
+    
+    channel_id = game.get("channel_id")
+    if not channel_id:
+        return False
+    
+    # Check if it's been 3+ hours since last activity
+    last_activity_iso = await db.get_state(gid, "last_wordgame_activity")
+    if not last_activity_iso:
+        # No tracking yet - start tracking now but don't auto-start yet
+        await db.set_state(gid, "last_wordgame_activity", datetime.now(timezone.utc).isoformat())
+        return False
+    
+    last_activity = datetime.fromisoformat(last_activity_iso)
+    if last_activity.tzinfo is None:
+        last_activity = last_activity.replace(tzinfo=timezone.utc)
+    
+    hours_since = (datetime.now(timezone.utc) - last_activity).total_seconds() / 3600
+    if hours_since < 3:
+        return False
+    
+    # Find the channel
+    guild = bot.get_guild(int(gid))
+    if not guild:
+        return False
+    
+    channel = guild.get_channel(int(channel_id))
+    if not channel:
+        return False
+    
+    # Delete old "Start new story" message if possible
+    try:
+        old_msg_id = game.get("message_id")
+        if old_msg_id:
+            old_msg = await channel.fetch_message(int(old_msg_id))
+            await old_msg.delete()
+    except Exception:
+        pass
+    
+    # Send notification embed
+    notify_embed = discord.Embed(
+        title="⏰ No one started a new story!",
+        description="It's been over 3 hours since the last game ended.\nStarting a new story automatically!",
+        color=0x9B59B6
+    )
+    await channel.send(embed=notify_embed)
+    
+    # Start new game
+    embed = build_word_game_embed("", 0, True)
+    view = WordGameActiveView()
+    msg = await channel.send(embed=embed, view=view)
+    await db.create_word_game(gid, channel_id, str(msg.id))
+    
+    print(f"[WordGame] Auto-started game in guild {gid} after {hours_since:.1f}h inactivity")
+    return True
+
+
 # ======================== SLASH COMMANDS ========================
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.60"
+BOT_VERSION = "v1.61"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1399,6 +1474,7 @@ async def on_message(message: discord.Message):
             else:
                 # Add the word
                 await db.add_word(gid, word, str(message.author.id))
+                await db.set_state(gid, "last_wordgame_activity", datetime.now(timezone.utc).isoformat())
                 game = await db.get_word_game(gid)
 
                 # Delete old bot message (forward pattern)
