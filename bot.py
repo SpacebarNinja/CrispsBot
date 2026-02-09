@@ -152,11 +152,22 @@ def format_mbti(raw: str) -> str:
 
 
 def format_enneagram(raw: str) -> str:
-    """Format enneagram: '3w2' stays as is, '3w?' allowed."""
-    raw = raw.strip().lower()
-    # Pattern: digit + w + digit or ?
+    """Format enneagram: '3w2' stays as is, '3w?' allowed, '549w651' → '5ʷ⁶4ʷ⁵9ʷ¹'."""
+    raw = raw.strip().lower().replace(" ", "")
+    
+    # Simple enneagram: digit + w + digit or ?
     if re.match(r"^[1-9]w[1-9?]$", raw):
         return raw
+    
+    # Full tritype with wings format: '549w651' or '549651' → '5ʷ⁶4ʷ⁵9ʷ¹'
+    match = re.match(r"^([1-9])([1-9])([1-9])w?([1-9?])([1-9?])([1-9?])$", raw)
+    if match:
+        c1, c2, c3, w1, w2, w3 = match.groups()
+        result = f"{c1}{SUPERSCRIPT_MAP['w']}{SUPERSCRIPT_MAP.get(w1, w1)}"
+        result += f"{c2}{SUPERSCRIPT_MAP['w']}{SUPERSCRIPT_MAP.get(w2, w2)}"
+        result += f"{c3}{SUPERSCRIPT_MAP['w']}{SUPERSCRIPT_MAP.get(w3, w3)}"
+        return result
+    
     return raw
 
 
@@ -1013,7 +1024,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.68.6"
+BOT_VERSION = "v1.68.7"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
