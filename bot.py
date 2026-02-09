@@ -30,9 +30,13 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Daily question rotation: warm → chill → typology → ...
-DAILY_QUESTION_ORDER = ["warm", "chill", "typology"]
-QUESTION_GAP_HOURS = 24 / len(DAILY_QUESTION_ORDER)  # 8 hours
+# Fixed question schedules (Manila timezone)
+# Chill: 12:00 PM, Warm (Hot): 8:00 PM, Typology: 12:00 AM
+QUESTION_SCHEDULES = {
+    "chill": {"hour": 12, "minute": 0},     # 12:00 PM
+    "warm": {"hour": 20, "minute": 0},      # 8:00 PM (Hot)
+    "typology": {"hour": 0, "minute": 0},   # 12:00 AM (midnight)
+}
 
 
 # ======================== HARDCODED CONFIG (Single Server) ========================
@@ -517,49 +521,30 @@ async def schedule_loop():
     for guild in bot.guilds:
         gid = str(guild.id)
 
-        # --- Daily Questions (rotating with auto-calculated gap) ---
-        next_q_iso = await db.get_state(gid, "next_daily_question")
-        if not next_q_iso:
-            # First run — schedule first question in 1 minute for quick start
-            next_time = now_utc + timedelta(minutes=1)
-            await db.set_state(gid, "next_daily_question", next_time.isoformat())
-            await db.set_state(gid, "daily_question_index", "0")
-        else:
-            next_q = datetime.fromisoformat(next_q_iso)
-            if next_q.tzinfo is None:
-                next_q = next_q.replace(tzinfo=timezone.utc)
-
-            if now_utc >= next_q:
-                # Duplicate prevention: Check if we posted very recently
-                last_post_iso = await db.get_state(gid, "last_question_posted_at")
-                if last_post_iso:
-                    last_post = datetime.fromisoformat(last_post_iso)
-                    if last_post.tzinfo is None:
-                        last_post = last_post.replace(tzinfo=timezone.utc)
-                    # Skip if we posted within the last 60 seconds (anti-duplicate)
-                    if (now_utc - last_post).total_seconds() < 60:
-                        print(f"[Schedule] Skipping duplicate post attempt for guild {gid}")
-                        continue
+        # --- Daily Questions (fixed Manila times) ---
+        for qtype, sched in QUESTION_SCHEDULES.items():
+            if now_manila.hour == sched["hour"] and now_manila.minute == sched["minute"]:
+                # Check if already posted today
+                last_iso = await db.get_state(gid, f"last_{qtype}_question")
+                should_post = True
+                if last_iso:
+                    last_dt = datetime.fromisoformat(last_iso)
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=timezone.utc)
+                    if last_dt.astimezone(MANILA_TZ).date() >= now_manila.date():
+                        should_post = False
                 
-                # Lock: Update state BEFORE posting to prevent race conditions
-                idx_str = await db.get_state(gid, "daily_question_index") or "0"
-                idx = int(idx_str) % len(DAILY_QUESTION_ORDER)
-                qtype = DAILY_QUESTION_ORDER[idx]
-                
-                # Schedule next question FIRST (prevents duplicate triggers)
-                next_idx = (idx + 1) % len(DAILY_QUESTION_ORDER)
-                next_time = now_utc + timedelta(hours=QUESTION_GAP_HOURS)
-                await db.set_state(gid, "next_daily_question", next_time.isoformat())
-                await db.set_state(gid, "daily_question_index", str(next_idx))
-                await db.set_state(gid, "last_question_posted_at", now_utc.isoformat())
-                
-                # Now post
-                post_fn = QUESTION_POST_FNS.get(qtype)
-                if post_fn:
-                    try:
-                        await post_fn(gid)
-                    except Exception as e:
-                        print(f"Error posting {qtype}: {e}")
+                if should_post:
+                    # Mark as posted BEFORE posting (prevents duplicates)
+                    await db.set_state(gid, f"last_{qtype}_question", now_utc.isoformat())
+                    
+                    post_fn = QUESTION_POST_FNS.get(qtype)
+                    if post_fn:
+                        try:
+                            await post_fn(gid)
+                            print(f"[Schedule] Posted {qtype} question for guild {gid}")
+                        except Exception as e:
+                            print(f"Error posting {qtype}: {e}")
 
         # --- Chatter Rewards (fixed Manila time) ---
         sched = config.CHATTER_SCHEDULE
@@ -768,7 +753,7 @@ class WordGameStartView(discord.ui.View):
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.59"
+BOT_VERSION = "v1.60"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -908,11 +893,8 @@ async def stats_cmd(interaction: discord.Interaction):
     total_chill = len(config.SPARK_CHILL) + len(config.PERSONALITY_QUESTIONS)
     total_typo = len(config.TYPOLOGY_QUESTIONS) + len(config.PERSONAL_TYPOLOGY_QUESTIONS) + len(config.FRIEND_GROUP_QUESTIONS)
 
-    next_q = await db.get_state(gid, "next_daily_question")
     last_cd = await db.get_state(gid, "last_chip_drop_claimed")
     last_cp = await db.get_state(gid, "last_code_purple")
-    q_idx = await db.get_state(gid, "daily_question_index") or "0"
-    next_type = DAILY_QUESTION_ORDER[int(q_idx) % len(DAILY_QUESTION_ORDER)]
 
     def fmt(iso):
         if not iso:
@@ -927,10 +909,9 @@ async def stats_cmd(interaction: discord.Interaction):
     embed.add_field(name="🔥 Warm Qs", value=f"{used_warm}/{total_warm}", inline=True)
     embed.add_field(name="🌙 Chill Qs", value=f"{used_chill}/{total_chill}", inline=True)
     embed.add_field(name="✨ Typology Qs", value=f"{used_typo}/{total_typo}", inline=True)
-    embed.add_field(name="📅 Next Question", value=f"{next_type.title()} {fmt(next_q)}", inline=True)
     embed.add_field(name="🥔 Last Chip Drop", value=fmt(last_cd), inline=True)
     embed.add_field(name="💜 Last Code Purple", value=fmt(last_cp), inline=True)
-    embed.add_field(name="⏱️ Question Gap", value=f"{QUESTION_GAP_HOURS:.0f}h", inline=True)
+    embed.add_field(name="📅 Question Times", value="12pm/8pm/12am PH", inline=True)
     embed.set_footer(text="CRISPS GC Bot Stats")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -1067,32 +1048,32 @@ async def viewschedule_cmd(interaction: discord.Interaction):
     lines.append("")
 
     # --- Upcoming Schedule ---
-    lines.append("**⏰ Upcoming Posts**")
+    lines.append("**⏰ Daily Question Schedule (PH Time)**")
     
-    # Daily questions — show next 3 in rotation
-    next_q_iso = await db.get_state(gid, "next_daily_question")
-    q_idx = int(await db.get_state(gid, "daily_question_index") or "0")
-
-    if next_q_iso:
-        next_q = datetime.fromisoformat(next_q_iso)
-        if next_q.tzinfo is None:
-            next_q = next_q.replace(tzinfo=timezone.utc)
-    else:
-        next_q = now_utc + timedelta(minutes=1)
-
+    # Show fixed question times
     names = {
-        "warm": "🔥 Warm Question",
         "chill": "🌙 Chill Question",
+        "warm": "🔥 Warm Question",
         "typology": "✨ Typology Question",
     }
-    for i in range(len(DAILY_QUESTION_ORDER)):
-        idx = (q_idx + i) % len(DAILY_QUESTION_ORDER)
-        qtype = DAILY_QUESTION_ORDER[idx]
-        post_time = next_q + timedelta(hours=QUESTION_GAP_HOURS * i)
-        ts = int(post_time.timestamp())
+    times = {
+        "chill": "12:00 PM",
+        "warm": "8:00 PM",
+        "typology": "12:00 AM",
+    }
+    # Order by time of day for nice display
+    for qtype in ["chill", "warm", "typology"]:
+        sched = QUESTION_SCHEDULES[qtype]
         ch_id = HARDCODED.get(f"channel_{qtype}")
         status = f"→ <#{ch_id}>" if ch_id else "→ ⚠️ No channel"
-        lines.append(f"{names[qtype]} <t:{ts}:R> {status}")
+        
+        # Calculate next occurrence
+        next_post = now_manila.replace(hour=sched["hour"], minute=sched["minute"], second=0, microsecond=0)
+        if next_post <= now_manila:
+            next_post += timedelta(days=1)
+        ts = int(next_post.astimezone(timezone.utc).timestamp())
+        
+        lines.append(f"{names[qtype]} @ {times[qtype]} (<t:{ts}:R>) {status}")
 
     lines.append("")
 
@@ -1110,63 +1091,39 @@ async def viewschedule_cmd(interaction: discord.Interaction):
     lines.append(f"💜 Code Purple: Checks every hour")
     lines.append(f"🥔 Chip Drops: {config.CHIP_DROP['min_delay']}-{config.CHIP_DROP['max_delay']}m after activity")
     lines.append("")
-    lines.append(f"*Question gap: {QUESTION_GAP_HOURS:.0f}h • {len(DAILY_QUESTION_ORDER)} daily types*")
+    lines.append(f"*Fixed daily schedules • All times in PH timezone*")
 
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
 
-@bot.tree.command(name="resettimer", description="Reset the daily question timer (admin only)")
+@bot.tree.command(name="forcepost", description="Force post a question or trigger chip drop (admin only)")
 @app_commands.default_permissions(administrator=True)
-@app_commands.describe(feature="What to reset")
+@app_commands.describe(feature="What to post")
 @app_commands.choices(
     feature=[
-        app_commands.Choice(name="Next Daily Question (posts in ~1 min)", value="daily"),
-        app_commands.Choice(name="Chip Drop (triggers in ~1 min)", value="chipdrop"),
+        app_commands.Choice(name="🌙 Chill Question", value="chill"),
+        app_commands.Choice(name="🔥 Warm Question", value="warm"),
+        app_commands.Choice(name="✨ Typology Question", value="typology"),
+        app_commands.Choice(name="🥔 Chip Drop", value="chipdrop"),
     ]
 )
-async def resettimer_cmd(interaction: discord.Interaction, feature: app_commands.Choice[str]):
+async def forcepost_cmd(interaction: discord.Interaction, feature: app_commands.Choice[str]):
     gid = str(interaction.guild_id)
-    now = datetime.now(timezone.utc)
-
-    if feature.value == "daily":
-        await db.set_state(gid, "next_daily_question", (now + timedelta(minutes=1)).isoformat())
-        q_idx = int(await db.get_state(gid, "daily_question_index") or "0")
-        next_type = DAILY_QUESTION_ORDER[q_idx % len(DAILY_QUESTION_ORDER)]
-        await interaction.response.send_message(
-            f"Daily question timer reset — **{next_type.title()}** will post in ~1 minute", ephemeral=True
-        )
-    elif feature.value == "chipdrop":
-        await interaction.response.send_message("Chip drop timer reset — will trigger in ~1 minute", ephemeral=True)
+    
+    if feature.value == "chipdrop":
+        await interaction.response.send_message("🥔 Forcing chip drop...", ephemeral=True)
         await do_chip_drop(gid)
-
-
-@bot.tree.command(name="fastforward", description="Fast forward daily question timer (admin only)")
-@app_commands.default_permissions(administrator=True)
-async def fastforward_cmd(interaction: discord.Interaction):
-    gid = str(interaction.guild_id)
-    
-    next_q_iso = await db.get_state(gid, "next_daily_question")
-    if not next_q_iso:
-        await interaction.response.send_message("No question scheduled yet!", ephemeral=True)
-        return
-    
-    next_q = datetime.fromisoformat(next_q_iso)
-    if next_q.tzinfo is None:
-        next_q = next_q.replace(tzinfo=timezone.utc)
-    
-    # Fast forward by (gap - 3 seconds)
-    skip_time = timedelta(hours=QUESTION_GAP_HOURS) - timedelta(seconds=3)
-    new_time = next_q - skip_time
-    
-    await db.set_state(gid, "next_daily_question", new_time.isoformat())
-    
-    q_idx = int(await db.get_state(gid, "daily_question_index") or "0")
-    next_type = DAILY_QUESTION_ORDER[q_idx % len(DAILY_QUESTION_ORDER)]
-    
-    ts = int(new_time.timestamp())
-    await interaction.response.send_message(
-        f"⏩ Fast forwarded! **{next_type.title()}** question will post <t:{ts}:R>", ephemeral=True
-    )
+    else:
+        qtype = feature.value
+        post_fn = QUESTION_POST_FNS.get(qtype)
+        if post_fn:
+            await interaction.response.send_message(f"Posting **{qtype.title()}** question...", ephemeral=True)
+            try:
+                await post_fn(gid)
+            except Exception as e:
+                await interaction.followup.send(f"Error: {e}", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"Unknown question type: {qtype}", ephemeral=True)
 
 
 # ---------- Ping Role ----------
