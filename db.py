@@ -14,7 +14,7 @@ TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
 USE_TURSO = bool(TURSO_URL and TURSO_TOKEN)
 
 if USE_TURSO:
-    import libsql_experimental as libsql
+    import libsql_experimental as libsql  # type: ignore - installed in production only
     print(f"[DB] Using Turso cloud database")
 else:
     import aiosqlite

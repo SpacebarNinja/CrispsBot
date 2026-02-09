@@ -24,14 +24,14 @@ CHIPS = {
 }
 
 CHIP_DROP = {
-    "activity_window": 30,      # minutes - check for recent activity before scheduling
+    "activity_window": 10,      # minutes - check for recent activity before scheduling
     "min_delay": 1,             # minutes - minimum delay before drop after activity detected
     "max_delay": 60,            # minutes - maximum delay before drop
     "min_cooldown_hours": 1,    # hours - minimum cooldown after grab
     "max_cooldown_hours": 10,   # hours - maximum cooldown after grab
     "min_amount": 1000,         # minimum chips per drop
     "max_amount": 10000,        # maximum chips per drop
-    "math_chance": 0.20,        # 20% chance for math question
+    "math_chance": 0.50,        # 50% chance for math question
     "timeout": 900,             # seconds before drop expires (15 min)
 }
 
