@@ -55,7 +55,7 @@ FEATURES = {
     "chatter_rewards": True,
     "chip_drops": True,
     "code_purple": True,
-    "activity_rewards": True,
+    "activity_rewards": False,  # Disabled - use chatter_rewards instead
 }
 
 LEADERBOARD = {

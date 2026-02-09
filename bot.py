@@ -551,14 +551,15 @@ async def schedule_loop():
         # --- Daily Questions (fixed Manila times) ---
         for qtype, sched in QUESTION_SCHEDULES.items():
             if now_manila.hour == sched["hour"] and now_manila.minute == sched["minute"]:
-                # Check if already posted today
+                # Check if already posted recently (within 23 hours) - prevents race conditions
                 last_iso = await db.get_state(gid, f"last_{qtype}_question")
                 should_post = True
                 if last_iso:
                     last_dt = datetime.fromisoformat(last_iso)
                     if last_dt.tzinfo is None:
                         last_dt = last_dt.replace(tzinfo=timezone.utc)
-                    if last_dt.astimezone(MANILA_TZ).date() >= now_manila.date():
+                    hours_since = (now_utc - last_dt).total_seconds() / 3600
+                    if hours_since < 23:  # Posted within last 23 hours = skip
                         should_post = False
                 
                 if should_post:
@@ -582,30 +583,36 @@ async def schedule_loop():
                 ld = datetime.fromisoformat(last)
                 if ld.tzinfo is None:
                     ld = ld.replace(tzinfo=timezone.utc)
-                if ld.astimezone(MANILA_TZ).date() >= now_manila.date():
+                hours_since = (now_utc - ld).total_seconds() / 3600
+                if hours_since < 23:  # Posted within last 23 hours = skip
                     should_post = False
             if should_post:
+                # Mark BEFORE posting
+                await db.set_state(gid, "last_chatter_post", now_utc.isoformat())
                 try:
                     await do_chatter_rewards(gid)
                 except Exception as e:
                     print(f"Error doing chatter rewards: {e}")
 
-        # --- Activity Rewards (fixed Manila time) ---
+        # --- Activity Rewards (fixed Manila time) - DISABLED by default ---
         act_sched = config.ACTIVITY_REWARDS
         if now_manila.hour == act_sched["hour"] and now_manila.minute == act_sched["minute"]:
-            last = await db.get_state(gid, "last_activity_post")
-            should_post = True
-            if last:
-                ld = datetime.fromisoformat(last)
-                if ld.tzinfo is None:
-                    ld = ld.replace(tzinfo=timezone.utc)
-                if ld.astimezone(MANILA_TZ).date() >= now_manila.date():
-                    should_post = False
-            if should_post and config.FEATURES.get("activity_rewards"):
-                try:
-                    await do_activity_rewards(gid)
-                except Exception as e:
-                    print(f"Error doing activity rewards: {e}")
+            if config.FEATURES.get("activity_rewards"):
+                last = await db.get_state(gid, "last_activity_post")
+                should_post = True
+                if last:
+                    ld = datetime.fromisoformat(last)
+                    if ld.tzinfo is None:
+                        ld = ld.replace(tzinfo=timezone.utc)
+                    hours_since = (now_utc - ld).total_seconds() / 3600
+                    if hours_since < 23:
+                        should_post = False
+                if should_post:
+                    await db.set_state(gid, "last_activity_post", now_utc.isoformat())
+                    try:
+                        await do_activity_rewards(gid)
+                    except Exception as e:
+                        print(f"Error doing activity rewards: {e}")
 
         # --- Code Purple (every hour) ---
         if now_manila.minute == 0:
@@ -622,6 +629,8 @@ async def schedule_loop():
 @schedule_loop.before_loop
 async def before_schedule():
     await bot.wait_until_ready()
+    # Random delay (0-30 sec) to desync multiple bot instances during Railway deploys
+    await asyncio.sleep(random.uniform(0, 30))
 
 
 async def chip_drop_cycle():
@@ -847,7 +856,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.66.3"
+BOT_VERSION = "v1.67"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
