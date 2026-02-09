@@ -773,13 +773,13 @@ class WordGameStartView(discord.ui.View):
 
         await interaction.response.defer()
 
-        # Delete this message (the completed story / start prompt)
+        # Remove the button from the completed story message (preserve the story)
         try:
-            await interaction.message.delete()
+            await interaction.message.edit(view=None)
         except Exception:
             pass
 
-        # Start new game
+        # Start new game in a NEW message
         embed = build_word_game_embed("", 0, True)
         view = WordGameActiveView()
         msg = await interaction.channel.send(embed=embed, view=view)
@@ -824,12 +824,12 @@ async def auto_start_word_game(gid: str) -> bool:
     if not channel:
         return False
     
-    # Delete old "Start new story" message if possible
+    # Remove button from old completed story message (preserve the story)
     try:
         old_msg_id = game.get("message_id")
         if old_msg_id:
             old_msg = await channel.fetch_message(int(old_msg_id))
-            await old_msg.delete()
+            await old_msg.edit(view=None)
     except Exception:
         pass
     
@@ -847,7 +847,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.66.2"
+BOT_VERSION = "v1.66.3"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
