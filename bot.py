@@ -823,7 +823,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.65"
+BOT_VERSION = "v1.65.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -972,34 +972,6 @@ async def importchipsdata_cmd(interaction: discord.Interaction, data: str):
         )
 
 
-@bot.tree.command(name="forcedrop", description="Force a chip drop (admin only)")
-@app_commands.default_permissions(administrator=True)
-async def forcedrop_cmd(interaction: discord.Interaction):
-    await interaction.response.send_message(config.MESSAGES["success"]["force_drop"], ephemeral=True)
-    await do_chip_drop(str(interaction.guild_id), str(interaction.channel_id))
-
-
-@bot.tree.command(name="forcequestion", description="Force post a daily question (admin only)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.describe(type="Type of question to post")
-@app_commands.choices(
-    type=[
-        app_commands.Choice(name="Warm Questions", value="warm"),
-        app_commands.Choice(name="Chill Questions", value="chill"),
-        app_commands.Choice(name="Typology Questions", value="typology"),
-    ]
-)
-async def forcequestion_cmd(interaction: discord.Interaction, type: app_commands.Choice[str]):
-    gid = str(interaction.guild_id)
-    fn = QUESTION_POST_FNS.get(type.value)
-    if fn:
-        await fn(gid)
-        ch = HARDCODED.get(f"channel_{type.value}")
-        await interaction.response.send_message(f"Posted {type.name} to <#{ch}>", ephemeral=True)
-    else:
-        await interaction.response.send_message(config.MESSAGES["errors"]["generic"], ephemeral=True)
-
-
 @bot.tree.command(name="codepurple", description="Force a Code Purple message (admin only)")
 @app_commands.default_permissions(administrator=True)
 async def codepurple_cmd(interaction: discord.Interaction):
@@ -1012,42 +984,6 @@ async def codepurple_cmd(interaction: discord.Interaction):
     await channel.send(random.choice(config.MESSAGES["code_purple"]))
     await db.set_state(gid, "last_code_purple", datetime.now(timezone.utc).isoformat())
     await interaction.response.send_message(f"Code purple posted to <#{channel_id}>", ephemeral=True)
-
-
-@bot.tree.command(name="stats", description="View bot statistics (admin only)")
-@app_commands.default_permissions(administrator=True)
-async def stats_cmd(interaction: discord.Interaction):
-    gid = str(interaction.guild_id)
-    total_users = await db.get_total_users(gid)
-
-    used_warm = len(await db.get_used_questions(gid, "warm"))
-    used_chill = len(await db.get_used_questions(gid, "chill"))
-    used_typo = len(await db.get_used_questions(gid, "typology"))
-    total_warm = len(config.SPARK_WYR) + len(config.SPARK_DEBATES) + len(config.BUTTON_QUESTIONS)
-    total_chill = len(config.SPARK_CHILL) + len(config.PERSONALITY_QUESTIONS)
-    total_typo = len(config.TYPOLOGY_QUESTIONS) + len(config.PERSONAL_TYPOLOGY_QUESTIONS) + len(config.FRIEND_GROUP_QUESTIONS)
-
-    last_cd = await db.get_state(gid, "last_chip_drop_claimed")
-    last_cp = await db.get_state(gid, "last_code_purple")
-
-    def fmt(iso):
-        if not iso:
-            return "Never"
-        t = datetime.fromisoformat(iso)
-        if t.tzinfo is None:
-            t = t.replace(tzinfo=timezone.utc)
-        return f"<t:{int(t.timestamp())}:R>"
-
-    embed = discord.Embed(title="📊 Bot Statistics", color=0x00BFFF, timestamp=datetime.now(timezone.utc))
-    embed.add_field(name="👥 Users", value=str(total_users), inline=True)
-    embed.add_field(name="🔥 Warm Qs", value=f"{used_warm}/{total_warm}", inline=True)
-    embed.add_field(name="🌙 Chill Qs", value=f"{used_chill}/{total_chill}", inline=True)
-    embed.add_field(name="✨ Typology Qs", value=f"{used_typo}/{total_typo}", inline=True)
-    embed.add_field(name="🥔 Last Chip Drop", value=fmt(last_cd), inline=True)
-    embed.add_field(name="💜 Last Code Purple", value=fmt(last_cp), inline=True)
-    embed.add_field(name="📅 Question Times", value="12pm/8pm/12am PH", inline=True)
-    embed.set_footer(text="CRISPS GC Bot Stats")
-    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 # COMMENTED OUT - Using hardcoded channels (v1.55)
