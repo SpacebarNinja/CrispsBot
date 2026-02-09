@@ -249,10 +249,7 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
     # Build embed
     color = get_mbti_color(mbti)
     
-    embed = discord.Embed(
-        title=f"📋 {target.display_name}",
-        color=color,
-    )
+    embed = discord.Embed(color=color)
     
     # Add fields in a clean list format
     profile_text = (
@@ -264,13 +261,10 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
     )
     embed.description = profile_text
     
-    # User's profile picture on the right
+    # User's profile picture on the right (thumbnail)
     embed.set_thumbnail(url=target.display_avatar.url)
     
-    # Footer stores user ID for !update tracking
-    embed.set_footer(text=f"Reply with !update <field> <value> • ID:{target.id}")
-    
-    # MBTI avatar image
+    # MBTI avatar as tiny author icon + display name
     file = None
     if attach_mbti and mbti:
         mbti_clean = mbti.upper().replace("X", "").replace("x", "")
@@ -278,7 +272,16 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
             avatar_path = os.path.join(os.path.dirname(__file__), "MBTI_Avatars", f"{mbti_clean}.png")
             if os.path.exists(avatar_path):
                 file = discord.File(avatar_path, filename=f"{mbti_clean}.png")
-                embed.set_image(url=f"attachment://{mbti_clean}.png")
+                embed.set_author(name=target.display_name, icon_url=f"attachment://{mbti_clean}.png")
+            else:
+                embed.set_author(name=target.display_name)
+        else:
+            embed.set_author(name=target.display_name)
+    else:
+        embed.set_author(name=target.display_name)
+    
+    # Hidden footer with just ID for !update tracking
+    embed.set_footer(text=str(target.id))
     
     return embed, file
 
@@ -1011,7 +1014,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.68.1"
+BOT_VERSION = "v1.68.2"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1669,7 +1672,7 @@ async def on_message(message: discord.Message):
         
         # Extract user ID from footer
         embed = replied_msg.embeds[0]
-        if not embed.footer or not embed.footer.text or "ID:" not in embed.footer.text:
+        if not embed.footer or not embed.footer.text or not embed.footer.text.strip().isdigit():
             confirm = await message.channel.send(f"{message.author.mention} ❌ That doesn't look like a typology card.", delete_after=5)
             try:
                 await message.delete()
@@ -1677,9 +1680,9 @@ async def on_message(message: discord.Message):
                 pass
             return
         
-        # Parse user ID from footer: "Reply with !update <field> <value> • ID:123456789"
+        # Parse user ID from footer (footer just contains the ID)
         try:
-            target_uid = embed.footer.text.split("ID:")[1].strip()
+            target_uid = embed.footer.text.strip()
         except Exception:
             confirm = await message.channel.send(f"{message.author.mention} ❌ Could not parse user ID from card.", delete_after=5)
             try:
