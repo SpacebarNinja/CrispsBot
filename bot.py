@@ -251,14 +251,13 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
     
     embed = discord.Embed(color=color)
     
-    # Add fields with spacing for cleaner look
+    # Add fields in clean list format
     profile_text = (
-        f"\n"
-        f"**MBTI:** {mbti_display}\n\n"
-        f"**Enneagram:** {enneagram_display}\n\n"
-        f"**Tritype:** {tritype_display}\n\n"
-        f"**Instinct:** {instinct_display}\n\n"
-        f"**AP:** {ap_display}\n"
+        f"**MBTI:** {mbti_display}\n"
+        f"**Enneagram:** {enneagram_display}\n"
+        f"**Tritype:** {tritype_display}\n"
+        f"**Instinct:** {instinct_display}\n"
+        f"**AP:** {ap_display}"
     )
     embed.description = profile_text
     
@@ -1014,7 +1013,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.68.3"
+BOT_VERSION = "v1.68.4"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1085,24 +1084,25 @@ async def leaderboard_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="typology", description="Add someone's typology card")
-@app_commands.describe(user="The user to create a card for (defaults to yourself)")
-async def typology_cmd(interaction: discord.Interaction, user: Optional[discord.Member] = None):
-    """Create a typology profile card for a user."""
-    target = user or interaction.user
-    gid = str(interaction.guild_id)
-    uid = str(target.id)
-    
-    # Get profile data
-    profile = await db.get_typology_profile(gid, uid)
-    
-    # Build embed with MBTI avatar
-    embed, file = build_typology_embed(target, profile, attach_mbti=True)
-    
-    if file:
-        await interaction.response.send_message(embed=embed, file=file)
-    else:
-        await interaction.response.send_message(embed=embed)
+# Slash command commented out - using !typology prefix command for cleaner UX
+# @bot.tree.command(name="typology", description="Add someone's typology card")
+# @app_commands.describe(user="The user to create a card for (defaults to yourself)")
+# async def typology_cmd(interaction: discord.Interaction, user: Optional[discord.Member] = None):
+#     """Create a typology profile card for a user."""
+#     target = user or interaction.user
+#     gid = str(interaction.guild_id)
+#     uid = str(target.id)
+#     
+#     # Get profile data
+#     profile = await db.get_typology_profile(gid, uid)
+#     
+#     # Build embed with MBTI avatar
+#     embed, file = build_typology_embed(target, profile, attach_mbti=True)
+#     
+#     if file:
+#         await interaction.response.send_message(embed=embed, file=file)
+#     else:
+#         await interaction.response.send_message(embed=embed)
 
 
 # ---------- Admin ----------
@@ -1638,8 +1638,31 @@ async def on_message(message: discord.Message):
         await db.increment_chatter(gid, uid, message.author.display_name)
         await db.increment_activity_message(gid, uid, message.author.display_name)
 
-    # --- !update command for typology profiles ---
+    # --- !typology or !t command to create typology cards ---
     content_lower = message.content.lower().strip()
+    if content_lower.startswith("!typology") or content_lower.startswith("!t ") or content_lower == "!t":
+        # Parse target user from mentions or default to self
+        target = message.mentions[0] if message.mentions else message.author
+        target_uid = str(target.id)
+        
+        # Get profile data
+        profile = await db.get_typology_profile(gid, target_uid)
+        
+        # Build embed with MBTI avatar
+        embed, file = build_typology_embed(target, profile, attach_mbti=True)
+        
+        # Send card and delete command for clean UX
+        try:
+            if file:
+                await message.channel.send(embed=embed, file=file)
+            else:
+                await message.channel.send(embed=embed)
+            await message.delete()
+        except Exception:
+            pass
+        return
+
+    # --- !update command for typology profiles ---
     if content_lower.startswith("!update "):
         # Must be a reply to a typology card (bot's message)
         if not message.reference:
