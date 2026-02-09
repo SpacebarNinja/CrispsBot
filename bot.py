@@ -251,13 +251,14 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
     
     embed = discord.Embed(color=color)
     
-    # Add fields in a clean list format
+    # Add fields with spacing for cleaner look
     profile_text = (
-        f"**MBTI:** {mbti_display}\n"
-        f"**Enneagram:** {enneagram_display}\n"
-        f"**Tritype:** {tritype_display}\n"
-        f"**Instinct:** {instinct_display}\n"
-        f"**AP:** {ap_display}"
+        f"\n"
+        f"**MBTI:** {mbti_display}\n\n"
+        f"**Enneagram:** {enneagram_display}\n\n"
+        f"**Tritype:** {tritype_display}\n\n"
+        f"**Instinct:** {instinct_display}\n\n"
+        f"**AP:** {ap_display}\n"
     )
     embed.description = profile_text
     
@@ -265,6 +266,8 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
     embed.set_thumbnail(url=target.display_avatar.url)
     
     # MBTI avatar as tiny author icon + display name
+    # Store user ID in author URL (invisible) for !update tracking
+    id_url = f"https://typology.id/{target.id}"
     file = None
     if attach_mbti and mbti:
         mbti_clean = mbti.upper().replace("X", "").replace("x", "")
@@ -272,16 +275,13 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
             avatar_path = os.path.join(os.path.dirname(__file__), "MBTI_Avatars", f"{mbti_clean}.png")
             if os.path.exists(avatar_path):
                 file = discord.File(avatar_path, filename=f"{mbti_clean}.png")
-                embed.set_author(name=target.display_name, icon_url=f"attachment://{mbti_clean}.png")
+                embed.set_author(name=target.display_name, icon_url=f"attachment://{mbti_clean}.png", url=id_url)
             else:
-                embed.set_author(name=target.display_name)
+                embed.set_author(name=target.display_name, url=id_url)
         else:
-            embed.set_author(name=target.display_name)
+            embed.set_author(name=target.display_name, url=id_url)
     else:
-        embed.set_author(name=target.display_name)
-    
-    # Hidden footer with just ID for !update tracking
-    embed.set_footer(text=str(target.id))
+        embed.set_author(name=target.display_name, url=id_url)
     
     return embed, file
 
@@ -1014,7 +1014,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.68.2"
+BOT_VERSION = "v1.68.3"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1670,9 +1670,9 @@ async def on_message(message: discord.Message):
                 pass
             return
         
-        # Extract user ID from footer
+        # Extract user ID from author URL
         embed = replied_msg.embeds[0]
-        if not embed.footer or not embed.footer.text or not embed.footer.text.strip().isdigit():
+        if not embed.author or not embed.author.url or "typology.id/" not in embed.author.url:
             confirm = await message.channel.send(f"{message.author.mention} ❌ That doesn't look like a typology card.", delete_after=5)
             try:
                 await message.delete()
@@ -1680,9 +1680,9 @@ async def on_message(message: discord.Message):
                 pass
             return
         
-        # Parse user ID from footer (footer just contains the ID)
+        # Parse user ID from author URL (format: https://typology.id/123456789)
         try:
-            target_uid = embed.footer.text.strip()
+            target_uid = embed.author.url.split("typology.id/")[1].strip()
         except Exception:
             confirm = await message.channel.send(f"{message.author.mention} ❌ Could not parse user ID from card.", delete_after=5)
             try:
@@ -1761,10 +1761,7 @@ async def on_message(message: discord.Message):
             else:
                 await replied_msg.edit(embed=new_embed)
             
-            # Send ephemeral-style confirmation (auto-deletes)
-            confirm = await message.channel.send(f"{message.author.mention} ✅ Updated **{target_user.display_name}**'s {field.upper()} to: **{formatted}**", delete_after=5)
-            
-            # Delete the command message
+            # Just delete the command message - card update is the confirmation
             await message.delete()
         except Exception as e:
             confirm = await message.channel.send(f"{message.author.mention} ❌ Error: {str(e)}", delete_after=8)
