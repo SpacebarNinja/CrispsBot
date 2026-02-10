@@ -1024,7 +1024,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.69.5"
+BOT_VERSION = "v1.69.6"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1119,7 +1119,7 @@ async def leaderboard_cmd(interaction: discord.Interaction):
 # ---------- Admin ----------
 
 
-@bot.tree.command(name="chips", description="Set a user's chip balance (admin only)"}
+@bot.tree.command(name="chips", description="Set a user's chip balance (admin only)")
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(user="The user", amount="The amount to set")
 async def chips_cmd(interaction: discord.Interaction, user: discord.Member, amount: int):
