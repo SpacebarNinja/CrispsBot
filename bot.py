@@ -1024,7 +1024,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.69.3"
+BOT_VERSION = "v1.69.4"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1147,6 +1147,17 @@ async def startwordgame_cmd(interaction: discord.Interaction):
 
 
 # ---------- Admin ----------
+
+
+@bot.tree.command(name="synccommands", description="Force sync slash commands (admin only)")
+@app_commands.default_permissions(administrator=True)
+async def synccommands_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    try:
+        synced = await bot.tree.sync()
+        await interaction.followup.send(f"✅ Synced {len(synced)} commands globally.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Sync failed: {e}", ephemeral=True)
 
 
 @bot.tree.command(name="chips", description="Set a user's chip balance (admin only)")
