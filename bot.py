@@ -1024,7 +1024,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.69.1"
+BOT_VERSION = "v1.69.2"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1841,8 +1841,8 @@ async def on_message(message: discord.Message):
         if drop["drop_type"] == "grab" and content.lower() == "~grab":
             claimed = True
         elif drop["drop_type"] == "math":
-            # Check if answer matches (strip whitespace)
-            if content == drop["answer"]:
+            # Check if answer matches (strip whitespace and commas)
+            if content.replace(",", "") == drop["answer"]:
                 claimed = True
         
         if claimed:
