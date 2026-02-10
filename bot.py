@@ -1024,7 +1024,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.69.2"
+BOT_VERSION = "v1.69.3"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1093,6 +1093,36 @@ async def leaderboard_cmd(interaction: discord.Interaction):
         )
 
     await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="startwordgame", description="Start a new word game in this channel")
+async def startwordgame_cmd(interaction: discord.Interaction):
+    gid = str(interaction.guild_id)
+    
+    # Check if there's already an active game
+    game = await db.get_word_game(gid)
+    if game and game["active"]:
+        await interaction.response.send_message("❌ A word game is already active!", ephemeral=True)
+        return
+    
+    # If there was a completed game, remove its button
+    if game:
+        try:
+            channel = interaction.guild.get_channel(int(game["channel_id"]))
+            if channel and game.get("message_id"):
+                old_msg = await channel.fetch_message(int(game["message_id"]))
+                await old_msg.edit(view=None)
+        except Exception:
+            pass
+    
+    # Start new game in current channel
+    await interaction.response.defer(ephemeral=True)
+    embed = build_word_game_embed("", 0, True)
+    view = WordGameActiveView()
+    msg = await interaction.channel.send(embed=embed, view=view)
+    await db.create_word_game(gid, str(interaction.channel.id), str(msg.id))
+    
+    await interaction.followup.send("✅ Word game started!", ephemeral=True)
 
 
 # Slash command commented out - using !typology prefix command for cleaner UX
