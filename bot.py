@@ -1024,7 +1024,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.69.4"
+BOT_VERSION = "v1.69.5"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1095,36 +1095,6 @@ async def leaderboard_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="startwordgame", description="Start a new word game in this channel")
-async def startwordgame_cmd(interaction: discord.Interaction):
-    gid = str(interaction.guild_id)
-    
-    # Check if there's already an active game
-    game = await db.get_word_game(gid)
-    if game and game["active"]:
-        await interaction.response.send_message("❌ A word game is already active!", ephemeral=True)
-        return
-    
-    # If there was a completed game, remove its button
-    if game:
-        try:
-            channel = interaction.guild.get_channel(int(game["channel_id"]))
-            if channel and game.get("message_id"):
-                old_msg = await channel.fetch_message(int(game["message_id"]))
-                await old_msg.edit(view=None)
-        except Exception:
-            pass
-    
-    # Start new game in current channel
-    await interaction.response.defer(ephemeral=True)
-    embed = build_word_game_embed("", 0, True)
-    view = WordGameActiveView()
-    msg = await interaction.channel.send(embed=embed, view=view)
-    await db.create_word_game(gid, str(interaction.channel.id), str(msg.id))
-    
-    await interaction.followup.send("✅ Word game started!", ephemeral=True)
-
-
 # Slash command commented out - using !typology prefix command for cleaner UX
 # @bot.tree.command(name="typology", description="Add someone's typology card")
 # @app_commands.describe(user="The user to create a card for (defaults to yourself)")
@@ -1149,18 +1119,7 @@ async def startwordgame_cmd(interaction: discord.Interaction):
 # ---------- Admin ----------
 
 
-@bot.tree.command(name="synccommands", description="Force sync slash commands (admin only)")
-@app_commands.default_permissions(administrator=True)
-async def synccommands_cmd(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    try:
-        synced = await bot.tree.sync()
-        await interaction.followup.send(f"✅ Synced {len(synced)} commands globally.", ephemeral=True)
-    except Exception as e:
-        await interaction.followup.send(f"❌ Sync failed: {e}", ephemeral=True)
-
-
-@bot.tree.command(name="chips", description="Set a user's chip balance (admin only)")
+@bot.tree.command(name="chips", description="Set a user's chip balance (admin only)"}
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(user="The user", amount="The amount to set")
 async def chips_cmd(interaction: discord.Interaction, user: discord.Member, amount: int):
@@ -1736,6 +1695,43 @@ async def on_message(message: discord.Message):
                 await message.channel.send(embed=embed, file=file)
             else:
                 await message.channel.send(embed=embed)
+            await message.delete()
+        except Exception:
+            pass
+        return
+
+    # --- !startwordgame command (admin only) ---
+    if content_lower == "!startwordgame":
+        # Check admin permission
+        if not message.author.guild_permissions.administrator:
+            return
+        
+        game = await db.get_word_game(gid)
+        if game and game["active"]:
+            await message.channel.send("❌ A word game is already active!", delete_after=5)
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return
+        
+        # If there was a completed game, remove its button
+        if game:
+            try:
+                channel = message.guild.get_channel(int(game["channel_id"]))
+                if channel and game.get("message_id"):
+                    old_msg = await channel.fetch_message(int(game["message_id"]))
+                    await old_msg.edit(view=None)
+            except Exception:
+                pass
+        
+        # Start new game in current channel
+        embed = build_word_game_embed("", 0, True)
+        view = WordGameActiveView()
+        msg = await message.channel.send(embed=embed, view=view)
+        await db.create_word_game(gid, str(message.channel.id), str(msg.id))
+        
+        try:
             await message.delete()
         except Exception:
             pass
