@@ -299,12 +299,13 @@ def build_typology_embed(target: discord.Member, profile: dict | None, attach_mb
 # ======================== POSTING FUNCTIONS ========================
 
 
-async def post_warm(guild_id: str):
+async def post_warm(guild_id: str, ping: bool = True, channel: discord.TextChannel = None):
     """Post a warm question (WYR, Debates, or Button) using type+question bags."""
-    channel_id = HARDCODED["channel_warm"]
-    channel = bot.get_channel(int(channel_id))
     if not channel:
-        print(f"[Warm] Could not find channel {channel_id}")
+        channel_id = HARDCODED["channel_warm"]
+        channel = bot.get_channel(int(channel_id))
+    if not channel:
+        print(f"[Warm] Could not find channel")
         return
 
     # Type bag: pick category first (cycles through all 3 before repeating)
@@ -341,17 +342,22 @@ async def post_warm(guild_id: str):
         footer=f"{display_name} (#{count})",
     )
 
-    ping_role_id = HARDCODED["ping_role_warm"]
-    content = f"<@&{ping_role_id}>"
-    await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
+    view = NewQuestionView("warm")
+    if ping:
+        ping_role_id = HARDCODED["ping_role_warm"]
+        content = f"<@&{ping_role_id}>"
+        await channel.send(content=content, embed=embed, view=view, allowed_mentions=discord.AllowedMentions(roles=True))
+    else:
+        await channel.send(embed=embed, view=view)
 
 
-async def post_chill(guild_id: str):
+async def post_chill(guild_id: str, ping: bool = True, channel: discord.TextChannel = None):
     """Post a chill question (Chill or Lifestyle) using type+question bags."""
-    channel_id = HARDCODED["channel_chill"]
-    channel = bot.get_channel(int(channel_id))
     if not channel:
-        print(f"[Chill] Could not find channel {channel_id}")
+        channel_id = HARDCODED["channel_chill"]
+        channel = bot.get_channel(int(channel_id))
+    if not channel:
+        print(f"[Chill] Could not find channel")
         return
 
     # Type bag: pick category first (cycles through both before repeating)
@@ -387,17 +393,22 @@ async def post_chill(guild_id: str):
         footer=f"{display_name} (#{count})",
     )
 
-    ping_role_id = HARDCODED["ping_role_chill"]
-    content = f"<@&{ping_role_id}>"
-    await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
+    view = NewQuestionView("chill")
+    if ping:
+        ping_role_id = HARDCODED["ping_role_chill"]
+        content = f"<@&{ping_role_id}>"
+        await channel.send(content=content, embed=embed, view=view, allowed_mentions=discord.AllowedMentions(roles=True))
+    else:
+        await channel.send(embed=embed, view=view)
 
 
-async def post_typology(guild_id: str):
+async def post_typology(guild_id: str, ping: bool = True, channel: discord.TextChannel = None):
     """Post a typology question (Comparing types, Personal typology, or Friend group) using type+question bags."""
-    channel_id = HARDCODED["channel_typology"]
-    channel = bot.get_channel(int(channel_id))
     if not channel:
-        print(f"[Typology] Could not find channel {channel_id}")
+        channel_id = HARDCODED["channel_typology"]
+        channel = bot.get_channel(int(channel_id))
+    if not channel:
+        print(f"[Typology] Could not find channel")
         return
 
     # Type bag: pick category first (cycles through all 3 before repeating)
@@ -446,9 +457,13 @@ async def post_typology(guild_id: str):
         footer=f"{footer_text} (#{count})",
     )
 
-    ping_role_id = HARDCODED["ping_role_typology"]
-    content = f"<@&{ping_role_id}>"
-    await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
+    view = NewQuestionView("typology")
+    if ping:
+        ping_role_id = HARDCODED["ping_role_typology"]
+        content = f"<@&{ping_role_id}>"
+        await channel.send(content=content, embed=embed, view=view, allowed_mentions=discord.AllowedMentions(roles=True))
+    else:
+        await channel.send(embed=embed, view=view)
 
 
 # Map question type → post function
@@ -963,6 +978,39 @@ class WordGameStartView(discord.ui.View):
         await db.create_word_game(gid, str(interaction.channel.id), str(msg.id))
 
 
+class NewQuestionView(discord.ui.View):
+    """Persistent view with 'New Question' button on question embeds."""
+
+    def __init__(self, question_type: str = None):
+        super().__init__(timeout=None)
+        self.question_type = question_type
+        # Set custom_id based on type for persistence
+        if question_type:
+            self.new_question_btn.custom_id = f"newquestion_{question_type}"
+
+    @discord.ui.button(label="New Question", style=discord.ButtonStyle.secondary, custom_id="newquestion_default")
+    async def new_question_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        gid = str(interaction.guild_id)
+        # Extract question type from custom_id
+        qtype = button.custom_id.replace("newquestion_", "")
+        
+        await interaction.response.defer()
+        
+        # Remove button from old message
+        try:
+            await interaction.message.edit(view=None)
+        except Exception:
+            pass
+        
+        # Post new question without ping
+        if qtype == "warm":
+            await post_warm(gid, ping=False, channel=interaction.channel)
+        elif qtype == "chill":
+            await post_chill(gid, ping=False, channel=interaction.channel)
+        elif qtype == "typology":
+            await post_typology(gid, ping=False, channel=interaction.channel)
+
+
 async def auto_start_word_game(gid: str) -> bool:
     """Auto-start a word game if it's been waiting too long. Returns True if started."""
     game = await db.get_word_game(gid)
@@ -1024,7 +1072,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.69.6"
+BOT_VERSION = "v1.70.0"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1529,6 +1577,9 @@ async def on_ready():
         # Register persistent views so buttons survive restarts
         bot.add_view(WordGameActiveView())
         bot.add_view(WordGameStartView())
+        bot.add_view(NewQuestionView("warm"))
+        bot.add_view(NewQuestionView("chill"))
+        bot.add_view(NewQuestionView("typology"))
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
