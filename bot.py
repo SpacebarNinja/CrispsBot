@@ -930,18 +930,18 @@ class NewQuestionView(discord.ui.View):
     @discord.ui.button(label="New Question", style=discord.ButtonStyle.secondary, custom_id="newquestion_default")
     async def new_question_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         gid = str(interaction.guild_id)
-        # Extract question type from custom_id
         qtype = button.custom_id.replace("newquestion_", "")
         
         await interaction.response.defer()
         
-        # Remove button from old message
         try:
             await interaction.message.edit(view=None)
         except Exception:
             pass
         
-        # Post new question without ping
+        # Show who requested the new question
+        await interaction.channel.send(f"-# {interaction.user.display_name} requested a new question")
+        
         if qtype == "warm":
             await post_warm(gid, ping=False, channel=interaction.channel)
         elif qtype == "chill":
@@ -1010,7 +1010,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.70.0"
+BOT_VERSION = "v1.71.0"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1099,41 +1099,39 @@ async def chips_cmd(interaction: discord.Interaction, user: discord.Member, amou
 async def exportdata_cmd(interaction: discord.Interaction):
     gid = str(interaction.guild_id)
     
-    # Get all chip data
     all_chips = await db.get_all_chips(gid)
     chips_data = {uid: chips for uid, _, chips in all_chips}
     
-    # Get all question usage (bags state)
     questions_data = await db.get_all_question_usage(gid)
     
-    # Combine into single export
     export_data = {
         "chips": chips_data,
         "questions": questions_data,
     }
     
     if not chips_data and not questions_data:
-        await interaction.response.send_message("No data to export.", ephemeral=True)
+        await interaction.response.send_message(f"No data to export for guild `{gid}`.", ephemeral=True)
         return
     
-    # Compress and encode
     json_str = json.dumps(export_data, separators=(',', ':'))
     compressed = zlib.compress(json_str.encode('utf-8'), level=9)
     encoded = base64.b64encode(compressed).decode('ascii')
     
-    # Count stats
     chip_count = len(chips_data)
     bag_count = len(questions_data)
+    total_questions = sum(len(indices) for indices in questions_data.values())
+    
+    stats = f"**Data Export** ({chip_count} users, {bag_count} question bags, {total_questions} questions used)"
     
     if len(encoded) > 1900:
         await interaction.response.send_message(
-            f"**Data Export** ({chip_count} users, {bag_count} question bags)\nData too long, sending as file:",
+            f"{stats}\nData too long, sending as file:",
             file=discord.File(fp=__import__('io').BytesIO(encoded.encode()), filename="bot_backup.txt"),
             ephemeral=True
         )
     else:
         await interaction.response.send_message(
-            f"**Data Export** ({chip_count} users, {bag_count} question bags)\n```\n{encoded}\n```\nUse `/importdata` with this string to restore.",
+            f"{stats}\n```\n{encoded}\n```\nUse `/importdata` with this string to restore.",
             ephemeral=True
         )
 
