@@ -1283,14 +1283,25 @@ async def chips_cmd(interaction: discord.Interaction, user: discord.Member, amou
     )
 
 
-@bot.tree.command(name="exportdata", description="Export all bot data (chips + question bags) as a compressed string (admin only)")
+@bot.tree.command(name="exportdata", description="Save bot data to the backup message (admin only)")
 @app_commands.default_permissions(administrator=True)
 async def exportdata_cmd(interaction: discord.Interaction):
     gid = str(interaction.guild_id)
     
+    # Check if backup message exists
+    backup_msg_id = await db.get_state(gid, "backup_message_id")
+    if not backup_msg_id:
+        await interaction.response.send_message(
+            "❌ No backup message set up. Use `!placedata` in a channel first to create one.",
+            ephemeral=True
+        )
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    # Build export data
     all_chips = await db.get_all_chips(gid)
     chips_data = {uid: chips for uid, _, chips in all_chips}
-    
     questions_data = await db.get_all_question_usage(gid)
     
     export_data = {
@@ -1299,7 +1310,7 @@ async def exportdata_cmd(interaction: discord.Interaction):
     }
     
     if not chips_data and not questions_data:
-        await interaction.response.send_message(f"No data to export for guild `{gid}`.", ephemeral=True)
+        await interaction.followup.send(f"No data to export for guild `{gid}`.", ephemeral=True)
         return
     
     json_str = json.dumps(export_data, separators=(',', ':'))
@@ -1310,24 +1321,41 @@ async def exportdata_cmd(interaction: discord.Interaction):
     bag_count = len(questions_data)
     total_questions = sum(len(keys) for keys in questions_data.values())
     
-    stats = f"**Data Export** ({chip_count} users, {bag_count} question bags, {total_questions} questions used)"
+    # Find and edit the backup message
+    backup_msg = None
+    for channel in interaction.guild.text_channels:
+        try:
+            backup_msg = await channel.fetch_message(int(backup_msg_id))
+            break
+        except Exception:
+            continue
     
-    if len(encoded) > 1900:
-        await interaction.response.send_message(
-            f"{stats}\nData too long, sending as file:",
-            file=discord.File(fp=__import__('io').BytesIO(encoded.encode()), filename="bot_backup.txt"),
+    if not backup_msg:
+        await interaction.followup.send(
+            f"❌ Could not find backup message (ID: {backup_msg_id}). Use `!placedata` to create a new one.",
             ephemeral=True
         )
-    else:
-        await interaction.response.send_message(
-            f"{stats}\n```\n{encoded}\n```\nUse `/importdata` with this string to restore.",
+        return
+    
+    # Update the message
+    now = datetime.now(MANILA_TZ)
+    timestamp = now.strftime("%b %d, %Y at %I:%M %p")
+    new_content = f"```\n{encoded}\n```\nLast saved: {timestamp}"
+    
+    try:
+        await backup_msg.edit(content=new_content)
+        await interaction.followup.send(
+            f"✅ **Backup saved!** ({chip_count} users, {bag_count} question bags, {total_questions} questions)\n"
+            f"Message: {backup_msg.jump_url}",
             ephemeral=True
         )
+    except Exception as e:
+        await interaction.followup.send(f"❌ Failed to update backup message: {e}", ephemeral=True)
 
 
-@bot.tree.command(name="importdata", description="Import bot data (chips + question bags) from a compressed string (admin only)")
+@bot.tree.command(name="importdata", description="Restore bot data from backup (copy the code from backup message)")
 @app_commands.default_permissions(administrator=True)
-@app_commands.describe(data="The compressed data string from /exportdata")
+@app_commands.describe(data="The compressed data string from the backup message")
 async def importdata_cmd(interaction: discord.Interaction, data: str):
     gid = str(interaction.guild_id)
     
