@@ -1190,7 +1190,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.71.0"
+BOT_VERSION = "v1.71.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1550,7 +1550,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     
     # --- Hall of Fame: forward messages with 4+ reactions of the SAME emoji ---
     # (Temporarily set to 1 😭 for testing)
-    HOF_THRESHOLD = 1  # Change back to 4 after testing
+    HOF_THRESHOLD = 4 # Change back to 4 after testing
     hof_channel_id = HARDCODED.get("channel_hall_of_fame")
     if hof_channel_id and payload.message_id not in _hall_of_fame_forwarded:
         try:
