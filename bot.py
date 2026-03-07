@@ -16,6 +16,8 @@ import os
 import zlib
 import base64
 import json
+import yaml
+from pathlib import Path
 
 from dotenv import load_dotenv
 import config
@@ -34,27 +36,20 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-QUESTION_SCHEDULES = {
-    "casual": {"hour": 20, "minute": 0},
-    "typology": {"hour": 0, "minute": 0},
-}
+def load_yaml(filename):
+    with open(Path(__file__).parent / "config" / filename, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+    
+settings_data = load_yaml("settings.yaml")
+haiku_data = load_yaml("haiku_data.yaml")
 
 
-HARDCODED = {
-    "ping_role_casual": "1470111189869527131",  # Casual questions ping role (was chill)
-    "ping_role_typology": "1470111535559999590",
-    "channel_casual": "1470111942696767548",
-    "channel_typology": "1450418107368738848",
-    "channel_codepurple": "1446277377771573402",
-    "channel_activity_rewards": "1446277377771573402",
-    "channel_chatter_rewards": "1470204258992390164",
-    "channel_hall_of_fame": "1479638228834189457",
-    "backup_message_id": "1479654378842357810",
-    "role_picker_message_casual": "1470113556476334182",  # Role picker for casual (was chill)
-    "role_picker_message_typology": "1470113576017723564",
-    "blacklist_categories": ["1446269291123966044", "1446277444372791458"],
-    "blacklist_channels": [],
-}
+QUESTION_SCHEDULES = settings_data["question_schedules"]
+HARDCODED = settings_data["ids"]
+
+# Compatibility
+HARDCODED["blacklist_categories"] = settings_data["blacklist_categories"]
+HARDCODED["blacklist_channels"] = settings_data["blacklist_channels"]
 
 # Hall of Fame: track which messages have been forwarded (in-memory cache)
 _hall_of_fame_forwarded: set[int] = set()
@@ -68,232 +63,10 @@ def fmt_num(n: int) -> str:
 # ======================== HAIKU DETECTION ========================
 
 # Slang/abbreviations that disqualify a message from being a haiku
-HAIKU_DISQUALIFY_WORDS = {
-    "idk", "lmfao", "lmao", "omg", "wtf", "wth", "brb", "afk", "imo", "imho",
-    "tbh", "ngl", "ikr", "smh", "fyi", "btw", "irl", "omfg", "rofl", "stfu", "gtfo",
-    "nvm", "jk", "bc", "cuz", "rn", "atm", "asap", "dm",
-    "gg", "wp", "ez", "pog", "poggers", "kek", "kekw", "copium", "hopium", "sus",
-    "thx", "ty", "yw", "np", "pls", "plz", "w/", "w/o", "b4", "2day", "2moro",
-    "ofc", "obv", "obvs", "prolly", "prob", "rly", "srsly", "tru", "fr",
-    "ong", "istg", "istfg", "icl", "nah", "yh", "yea", "ye", "yee", "yeet",
-    "bruh", "bro", "dude", "fam", "goat", "goated", "mid", "based", "cringe",
-    "lowkey", "highkey", "deadass", "bussin", "slay", "periodt", "oop", "sksksk",
-    "hbu", "wbu", "hmu", "lmk", "ttyl", "g2g", "gtg", "cya", "l8r",
-}
+HAIKU_DISQUALIFY_WORDS = set(haiku_data["disqualify_words"])
 
 # Words that the vowel-counting algorithm gets wrong
-SYLLABLE_OVERRIDES = {
-    # 1-syllable words often miscounted as 2+
-    "there": 1, "where": 1, "here": 1, "were": 1, "their": 1, "they're": 1,
-    "we're": 1, "you're": 1, "i'm": 1, "he's": 1, "she's": 1, "it's": 1,
-    "that's": 1, "what's": 1, "who's": 1, "there's": 1, "here's": 1, "where's": 1,
-    "fire": 1, "hire": 1, "wire": 1, "tire": 1, "dire": 1, "sire": 1, "lyre": 1,
-    "core": 1, "more": 1, "fore": 1, "bore": 1, "shore": 1, "store": 1, "score": 1,
-    "wore": 1, "tore": 1, "sore": 1, "pore": 1, "lore": 1, "gore": 1, "chore": 1,
-    "cores": 1, "stores": 1, "scores": 1, "shores": 1, "bores": 1, "pores": 1,
-    "time": 1, "times": 1, "like": 1, "likes": 1, "liked": 1,
-    "make": 1, "makes": 1, "made": 1, "take": 1, "takes": 1, "took": 1,
-    "come": 1, "comes": 1, "came": 1, "some": 1, "home": 1, "homes": 1,
-    "give": 1, "gives": 1, "gave": 1, "live": 1, "lives": 1, "lived": 1,
-    "have": 1, "has": 1, "had": 1, "love": 1, "loves": 1, "loved": 1,
-    "move": 1, "moves": 1, "moved": 1, "prove": 1, "proves": 1, "proved": 1,
-    "use": 1, "used": 1, "uses": 1, "lose": 1, "lost": 1, "chose": 1,
-    "noise": 1, "voice": 1, "choice": 1, "moist": 1, "hoist": 1,
-    "cause": 1, "pause": 1, "clause": 1, "gauze": 1,
-    "house": 1, "mouse": 1, "blouse": 1, "spouse": 1, "louse": 1,
-    "false": 1, "pulse": 1, "else": 1, "dense": 1, "sense": 1, "tense": 1,
-    "since": 1, "prince": 1, "hence": 1, "fence": 1, "pence": 1,
-    "once": 1, "ounce": 1, "bounce": 1, "pounce": 1, "source": 1, "course": 1,
-    "force": 1, "horse": 1, "worse": 1, "nurse": 1, "curse": 1, "purse": 1,
-    "verse": 1, "terse": 1, "fierce": 1, "pierce": 1,
-    "these": 1, "those": 1, "whose": 1, "close": 1, "dose": 1, "pose": 1, "rose": 1,
-    "change": 1, "changes": 1, "changed": 1, "range": 1, "strange": 1,
-    "large": 1, "charge": 1, "merge": 1, "verge": 1, "urge": 1, "surge": 1,
-    "edge": 1, "hedge": 1, "ledge": 1, "wedge": 1, "pledge": 1, "bridge": 1,
-    "judge": 1, "budge": 1, "fudge": 1, "grudge": 1, "nudge": 1,
-    "whole": 1, "role": 1, "pole": 1, "hole": 1, "sole": 1, "stole": 1,
-    "while": 1, "smile": 1, "style": 1, "aisle": 1, "isle": 1,
-    "white": 1, "write": 1, "quite": 1, "spite": 1, "site": 1, "bite": 1, "kite": 1,
-    "place": 1, "space": 1, "grace": 1, "trace": 1, "brace": 1, "race": 1, "face": 1,
-    "price": 1, "twice": 1, "slice": 1, "spice": 1, "dice": 1, "rice": 1, "mice": 1, "nice": 1,
-    "dance": 1, "chance": 1, "glance": 1, "france": 1, "lance": 1,
-    "prince": 1, "ince": 1, "rinse": 1, "wince": 1,
-    "world": 1, "words": 1, "works": 1, "turns": 1, "burns": 1, "learns": 1,
-    "years": 1, "fears": 1, "tears": 1, "gears": 1, "bears": 1, "wears": 1,
-    "need": 1, "needs": 1, "feed": 1, "seed": 1, "speed": 1, "breed": 1,
-    "feel": 1, "feels": 1, "wheel": 1, "steel": 1, "heel": 1,
-    "been": 1, "seen": 1, "keen": 1, "teen": 1, "screen": 1, "green": 1,
-    "meet": 1, "feet": 1, "sweet": 1, "sheet": 1, "street": 1,
-    "sleep": 1, "deep": 1, "keep": 1, "steep": 1, "creep": 1, "sweep": 1,
-    "week": 1, "seek": 1, "peek": 1, "geek": 1, "meek": 1, "cheek": 1,
-    "speak": 1, "weak": 1, "sneak": 1, "leak": 1, "peak": 1, "freak": 1,
-    "break": 1, "great": 1, "steak": 1,
-    "please": 1, "tease": 1, "ease": 1, "seize": 1, "freeze": 1, "breeze": 1,
-    "leave": 1, "leaves": 1, "weave": 1, "heave": 1, "sleeve": 1,
-    "peace": 1, "lease": 1, "cease": 1, "crease": 1, "grease": 1,
-    "beast": 1, "feast": 1, "least": 1, "yeast": 1, "east": 1,
-    "read": 1, "lead": 1, "dead": 1, "head": 1, "bread": 1, "spread": 1, "dread": 1,
-    "said": 1, "paid": 1, "laid": 1, "maid": 1, "raid": 1, "braid": 1,
-    "wait": 1, "bait": 1, "fate": 1, "gate": 1, "hate": 1, "late": 1, "mate": 1, "rate": 1,
-    "date": 1, "state": 1, "plate": 1, "skate": 1, "great": 1, "trait": 1,
-    "rain": 1, "pain": 1, "main": 1, "gain": 1, "train": 1, "brain": 1, "drain": 1,
-    "claim": 1, "aim": 1, "blame": 1, "flame": 1, "frame": 1, "game": 1, "name": 1, "same": 1,
-    "shame": 1, "tame": 1, "fame": 1, "came": 1,
-    "day": 1, "days": 1, "way": 1, "ways": 1, "say": 1, "says": 1, "play": 1, "plays": 1,
-    "stay": 1, "stays": 1, "may": 1, "lay": 1, "pay": 1, "ray": 1, "bay": 1, "gay": 1,
-    "gray": 1, "grey": 1, "prey": 1, "they": 1, "hey": 1, "key": 1, "keys": 1,
-    "buy": 1, "guy": 1, "guys": 1, "try": 1, "cry": 1, "dry": 1, "fly": 1, "shy": 1, "sky": 1, "why": 1,
-    "eye": 1, "eyes": 1, "dye": 1, "bye": 1, "rye": 1, "lie": 1, "lies": 1, "lied": 1,
-    "die": 1, "dies": 1, "died": 1, "tie": 1, "ties": 1, "tied": 1, "pie": 1, "pies": 1,
-    "high": 1, "sigh": 1, "thigh": 1, "nigh": 1,
-    "night": 1, "light": 1, "right": 1, "might": 1, "sight": 1, "tight": 1, "fight": 1, "flight": 1,
-    "bright": 1, "slight": 1, "fright": 1, "knight": 1,
-    "know": 1, "knows": 1, "known": 1, "knew": 1, "show": 1, "shows": 1, "shown": 1,
-    "grow": 1, "grows": 1, "grown": 1, "grew": 1, "throw": 1, "throws": 1, "thrown": 1, "threw": 1,
-    "slow": 1, "flow": 1, "glow": 1, "blow": 1, "snow": 1, "low": 1, "row": 1, "tow": 1,
-    "own": 1, "owns": 1, "owned": 1, "down": 1, "town": 1, "brown": 1, "crown": 1, "drown": 1, "frown": 1,
-    "now": 1, "how": 1, "wow": 1, "cow": 1, "bow": 1, "vow": 1, "plow": 1,
-    "out": 1, "outs": 1, "shout": 1, "doubt": 1, "about": 2, "scout": 1, "snout": 1,
-    "loud": 1, "cloud": 1, "proud": 1, "crowd": 1, "shroud": 1,
-    "found": 1, "sound": 1, "round": 1, "ground": 1, "bound": 1, "pound": 1, "mound": 1,
-    "count": 1, "mount": 1, "fount": 1, "amount": 2,
-    "door": 1, "doors": 1, "floor": 1, "poor": 1,
-    "four": 1, "pour": 1, "tour": 1, "your": 1, "our": 1,
-    "hour": 1, "hours": 1, "ours": 1, "sour": 1, "flour": 1,
-    "sure": 1, "pure": 1, "cure": 1, "lure": 1,
-    "rule": 1, "rules": 1, "ruled": 1, "fool": 1, "pool": 1, "cool": 1, "tool": 1,
-    "school": 1, "schools": 1, "drool": 1,
-    "room": 1, "rooms": 1, "boom": 1, "doom": 1, "zoom": 1, "bloom": 1, "broom": 1, "groom": 1,
-    "soon": 1, "moon": 1, "noon": 1, "spoon": 1, "tune": 1, "june": 1, "dune": 1,
-    "food": 1, "mood": 1, "good": 1, "wood": 1, "stood": 1, "blood": 1, "flood": 1,
-    "book": 1, "books": 1, "look": 1, "looks": 1, "looked": 1, "took": 1, "cook": 1, "hook": 1,
-    "foot": 1, "root": 1, "boot": 1, "shoot": 1, "hoot": 1,
-    "true": 1, "blue": 1, "glue": 1, "clue": 1, "due": 1, "sue": 1,
-    "new": 1, "few": 1, "dew": 1, "jew": 1, "knew": 1, "blew": 1, "drew": 1, "grew": 1,
-    "view": 1, "views": 1, "chew": 1, "stew": 1, "brew": 1, "crew": 1, "screw": 1,
-    "thing": 1, "things": 1, "think": 1, "thinks": 1, "bring": 1, "brings": 1, "ring": 1, "sing": 1, "king": 1,
-    "spring": 1, "string": 1, "swing": 1, "wing": 1, "sting": 1, "cling": 1,
-    "long": 1, "song": 1, "strong": 1, "wrong": 1, "along": 2, "belong": 2,
-    "young": 1, "tongue": 1, "hung": 1, "lung": 1, "sung": 1, "rung": 1,
-    "thank": 1, "thanks": 1, "blank": 1, "tank": 1, "bank": 1, "rank": 1, "sank": 1, "drank": 1,
-    "think": 1, "blink": 1, "drink": 1, "shrink": 1, "stink": 1, "pink": 1, "link": 1, "sink": 1,
-    "chunk": 1, "drunk": 1, "skunk": 1, "trunk": 1, "shrunk": 1,
-    "jump": 1, "jumps": 1, "jumped": 1, "bump": 1, "pump": 1, "dump": 1, "lump": 1,
-    "crisp": 1, "grasp": 1, "clasp": 1, "wasp": 1,
-    "just": 1, "must": 1, "trust": 1, "bust": 1, "dust": 1, "gust": 1, "rust": 1,
-    "fast": 1, "last": 1, "past": 1, "vast": 1, "cast": 1, "mast": 1, "blast": 1,
-    "best": 1, "rest": 1, "test": 1, "west": 1, "nest": 1, "chest": 1, "guest": 1, "quest": 1,
-    "list": 1, "fist": 1, "mist": 1, "twist": 1, "wrist": 1, "exist": 2, "insist": 2, "resist": 2,
-    "most": 1, "post": 1, "host": 1, "cost": 1, "lost": 1, "frost": 1, "ghost": 1, "toast": 1, "roast": 1, "coast": 1, "boast": 1,
-    "first": 1, "worst": 1, "burst": 1, "thirst": 1,
-    "earth": 1, "birth": 1, "worth": 1, "north": 1, "south": 1, "mouth": 1, "youth": 1, "truth": 1,
-    "death": 1, "breath": 1, "health": 1, "wealth": 1, "stealth": 1,
-    "strength": 1, "length": 1,
-    "growth": 1, "both": 1, "cloth": 1, "moth": 1,
-    "through": 1, "though": 1, "thought": 1, "brought": 1, "bought": 1, "fought": 1, "sought": 1, "caught": 1, "taught": 1,
-    "much": 1, "such": 1, "touch": 1, "couch": 1, "pouch": 1, "vouch": 1, "crouch": 1,
-    "each": 1, "reach": 1, "teach": 1, "beach": 1, "peach": 1, "coach": 1,
-    "which": 1, "rich": 1, "pitch": 1, "ditch": 1, "witch": 1, "switch": 1, "stitch": 1,
-    "watch": 1, "match": 1, "catch": 1, "atch": 1, "patch": 1, "batch": 1, "hatch": 1, "latch": 1,
-    "march": 1, "search": 1, "arch": 1, "porch": 1, "torch": 1,
-    "church": 1, "lurch": 1,
-    "flesh": 1, "fresh": 1, "mesh": 1, "crash": 1, "trash": 1, "flash": 1, "clash": 1, "splash": 1,
-    "brush": 1, "crush": 1, "rush": 1, "hush": 1, "push": 1, "bush": 1, "blush": 1, "flush": 1,
-    "wish": 1, "fish": 1, "dish": 1, "swish": 1,
-    "ship": 1, "ships": 1, "trip": 1, "trips": 1, "chip": 1, "chips": 1, "skip": 1, "slip": 1, "grip": 1, "drip": 1, "flip": 1, "clip": 1, "strip": 1, "whip": 1,
-    "shop": 1, "stop": 1, "drop": 1, "crop": 1, "prop": 1, "chop": 1,
-    "step": 1, "steps": 1,
-    "help": 1, "helps": 1, "helped": 1, "self": 1, "shelf": 1,
-    "half": 1, "calf": 1, "staff": 1,
-    "calm": 1, "palm": 1, "balm": 1, "psalm": 1, "qualm": 1, "alm": 1,
-    "walk": 1, "walks": 1, "walked": 1, "talk": 1, "talks": 1, "talked": 1, "chalk": 1, "stalk": 1,
-    "child": 1, "wild": 1, "mild": 1, "build": 1, "guild": 1, "field": 1, "yield": 1, "shield": 1,
-    "hold": 1, "holds": 1, "told": 1, "sold": 1, "gold": 1, "cold": 1, "bold": 1, "fold": 1, "old": 1,
-    "self": 1, "golf": 1, "wolf": 1,
-    "film": 1, "films": 1, "helm": 1, "realm": 1, "elm": 1,
-    "arm": 1, "arms": 1, "armed": 1, "farm": 1, "harm": 1, "charm": 1, "warm": 1,
-    "form": 1, "forms": 1, "storm": 1, "norm": 1, "worm": 1, "dorm": 1,
-    "term": 1, "terms": 1, "firm": 1,
-    "art": 1, "arts": 1, "part": 1, "parts": 1, "start": 1, "starts": 1, "heart": 1, "hearts": 1,
-    "smart": 1, "chart": 1, "dart": 1, "cart": 1, "apart": 2,
-    "sort": 1, "port": 1, "sport": 1, "short": 1, "fort": 1, "court": 1, "report": 2, "support": 2,
-    "hurt": 1, "dirt": 1, "shirt": 1, "skirt": 1, "flirt": 1, "squirt": 1,
-    "act": 1, "acts": 1, "fact": 1, "facts": 1, "pact": 1, "tract": 1, "exact": 2, "impact": 2,
-    "text": 1, "next": 1, "context": 2, "complex": 2,
-    "mix": 1, "fix": 1, "six": 1,
-    "box": 1, "fox": 1, "ox": 1,
-    "tax": 1, "wax": 1, "max": 1, "fax": 1, "relax": 2,
-    "ask": 1, "asks": 1, "asked": 1, "task": 1, "mask": 1, "flask": 1,
-    "risk": 1, "disk": 1, "brisk": 1,
-    "desk": 1,
-    
-    # 2-syllable words
-    "about": 2, "above": 2, "across": 2, "after": 2, "again": 2, "against": 2,
-    "almost": 2, "alone": 2, "along": 2, "also": 2, "always": 2,
-    "among": 2, "answer": 2, "any": 2, "anyone": 3, "anything": 3, "anywhere": 3,
-    "become": 2, "before": 2, "began": 2, "begin": 2, "begun": 2, "behind": 2,
-    "being": 2, "believe": 2, "below": 2, "beside": 2, "between": 2, "beyond": 2,
-    "body": 2, "broken": 2, "brother": 2,
-    "cannot": 2, "certain": 2, "children": 2, "city": 2, "coming": 2, "country": 2,
-    "cover": 2, "complete": 2,
-    "doing": 2, "during": 2,
-    "early": 2, "easy": 2, "either": 2, "ending": 2, "enough": 2, "even": 2, "ever": 2, "every": 2,
-    "father": 2, "feeling": 2, "final": 2, "follow": 2, "forget": 2, "forward": 2, "future": 2,
-    "giving": 2, "going": 2, "golden": 2,
-    "happened": 2, "happy": 2, "having": 2, "heavy": 2, "herself": 2, "himself": 2, "human": 2,
-    "idea": 3, "into": 2, "itself": 2,
-    "knowing": 2,
-    "later": 2, "leaving": 2, "letter": 2, "listen": 2, "little": 2, "living": 2, "longer": 2, "looking": 2, "loving": 2,
-    "making": 2, "many": 2, "matter": 2, "maybe": 2, "meaning": 2, "metal": 2, "minute": 2, "moment": 2, "money": 2, "mother": 2, "moving": 2, "music": 2, "myself": 2,
-    "nature": 2, "never": 2, "nothing": 2, "number": 2,
-    "often": 2, "only": 2, "open": 2, "order": 2, "other": 2, "others": 2, "over": 2,
-    "paper": 2, "party": 2, "people": 2, "person": 2, "picture": 2, "places": 2, "playing": 2, "poet": 2, "power": 2, "problem": 2,
-    "quickly": 2, "quiet": 2,
-    "really": 2, "reason": 2, "river": 2, "running": 2,
-    "second": 2, "seeing": 2, "seems": 1, "seven": 2, "shadow": 2, "simple": 2, "sister": 2, "sitting": 2, "slowly": 2, "smaller": 2, "something": 2, "sometimes": 2, "sorry": 2, "standing": 2, "started": 2, "story": 2, "student": 2, "system": 2,
-    "table": 2, "taken": 2, "taking": 2, "telling": 2, "thinking": 2, "today": 2, "together": 3, "toward": 2, "trouble": 2, "trying": 2, "turning": 2,
-    "under": 2, "until": 2, "upon": 2,
-    "very": 2, "walking": 2, "wanted": 2, "water": 2, "woman": 2, "women": 2, "wonder": 2, "working": 2, "writing": 2,
-    "yellow": 2, "yourself": 2,
-    
-    # 3-syllable words
-    "another": 3, "anything": 3, "beautiful": 3, "beginning": 3, "already": 3, "possible": 3,
-    "different": 3, "difficult": 3, "discover": 3, "direction": 3,
-    "everyone": 3, "everything": 4, "everywhere": 3, "example": 3,
-    "family": 3, "finally": 3, "following": 3, "forever": 3,
-    "general": 3, "government": 3,
-    "history": 3, "however": 3, "hundreds": 2, "important": 3,
-    "interest": 3, "introduce": 3,
-    "magical": 3, "memories": 3, "memory": 3, "minister": 3, "mountain": 2, "movement": 2,
-    "national": 3, "natural": 3, "negative": 3,
-    "obvious": 3, "opinion": 3,
-    "personal": 3, "physical": 3, "positive": 3, "powerful": 3, "probably": 3,
-    "question": 2, "questions": 2,
-    "realize": 3, "remember": 3,
-    "several": 3, "somebody": 3, "somebody": 3, "somebody": 3, "suddenly": 3,
-    "tomorrow": 3, "together": 3, "triads": 2,
-    "understand": 3, "usually": 4,
-    "wonderful": 3,
-    
-    # 4+ syllable words
-    "absolutely": 5, "actually": 4, "apparently": 4, "beautiful": 3, "community": 4,
-    "especially": 4, "everybody": 4, "eventually": 5, "everything": 4,
-    "immediately": 5, "impossible": 4, "individual": 5, "information": 4,
-    "opportunity": 5, "originally": 5,
-    "particularly": 5, "personality": 5, "possibility": 5, "relationship": 4,
-    "unfortunately": 5, "university": 5,
-    
-    # Typology terms
-    "intj": 4, "intp": 4, "entj": 4, "entp": 4,
-    "infj": 4, "infp": 4, "enfj": 4, "enfp": 4,
-    "istj": 4, "istp": 4, "estj": 4, "estp": 4,
-    "isfj": 4, "isfp": 4, "esfj": 4, "esfp": 4,
-    "mbti": 4, "socionics": 4, "enneagram": 4,
-    "introvert": 3, "extrovert": 3, "introversion": 4, "extroversion": 4,
-    "intuition": 4, "intuitive": 4, "sensing": 2, "sensor": 2,
-    "feeling": 2, "feeler": 2, "thinker": 2, "judging": 2, "perceiving": 3,
-    "tritype": 2, "instinct": 2, "instincts": 2, "variant": 3,
-}
+SYLLABLE_OVERRIDES = haiku_data["syllable_overrides"]
 
 
 def count_syllables(word: str) -> int | None:
@@ -1611,8 +1384,7 @@ async def codepurple_cmd(interaction: discord.Interaction):
 @app_commands.default_permissions(administrator=True)
 async def viewchannels_cmd(interaction: discord.Interaction):
     lines = ["**Current Channel Settings (Hardcoded):**", ""]
-    lines.append(f"🔥 Warm Questions: <#{HARDCODED['channel_warm']}>")
-    lines.append(f"🌙 Chill Questions: <#{HARDCODED['channel_chill']}>")
+    lines.append(f"💬 Casual Questions: <#{HARDCODED['channel_casual']}>")
     lines.append(f"✨ Typology Questions: <#{HARDCODED['channel_typology']}>")
     lines.append(f"💜 Code Purple: <#{HARDCODED['channel_codepurple']}>")
     lines.append(f"🏆 Activity Rewards: <#{HARDCODED['channel_activity_rewards']}>")
