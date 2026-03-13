@@ -1130,7 +1130,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.75.2"
+BOT_VERSION = "v2.0.0"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1274,20 +1274,23 @@ def compare_cards(current: tuple, next_card: tuple) -> str:
 
 
 def hl_multiplier(streak: int) -> float:
-    """Calculate payout multiplier based on streak."""
-    return 1.0 + (streak * 0.5)
+    """Calculate payout multiplier based on streak.
+    Starts at 0x, need 5 correct guesses to break even.
+    House has massive edge - treat this like a real casino.
+    """
+    return streak * 0.2
 
 
 # Store active games: {(guild_id, user_id): game_state}
 _active_games: dict[tuple[str, str], dict] = {}
 
 
-class BetModal(discord.ui.Modal, title="Place Your Bet"):
+class BetModal(discord.ui.Modal, title="Place Your Bet!"):
     """Modal to enter bet amount."""
     
     bet_input = discord.ui.TextInput(
-        label="How many crisps would you like to bet?",
-        placeholder="e.g. 100",
+        label="How many chips would you like to bet?",
+        placeholder="e.g. 500",
         min_length=1,
         max_length=10,
     )
