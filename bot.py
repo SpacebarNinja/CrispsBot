@@ -1130,7 +1130,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v2.0.6"
+BOT_VERSION = "v2.0.7"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1274,8 +1274,10 @@ def compare_cards(current: tuple, next_card: tuple) -> str:
 
 
 def hl_multiplier(streak: int) -> float:
-    """0.25x per correct guess. Break even at 4."""
-    return streak * 0.25
+    """0.25x per guess up to streak 4 (break even), then +0.5x per guess after."""
+    if streak <= 4:
+        return streak * 0.25
+    return 1.0 + (streak - 4) * 0.5
 
 
 # Store active games: {(guild_id, user_id): game_state}
@@ -1330,6 +1332,8 @@ class BetModal(discord.ui.Modal, title="Place Your Bet!"):
         
         if self.game_type == "higher_lower":
             await start_higher_lower(interaction, bet)
+        elif self.game_type == "video_poker":
+            await start_video_poker(interaction, bet)
 
 
 async def start_higher_lower(interaction: discord.Interaction, bet: int, use_followup: bool = False):
@@ -1373,9 +1377,10 @@ async def start_higher_lower(interaction: discord.Interaction, bet: int, use_fol
 class PlayAgainView(discord.ui.View):
     """Play Again button shown on game-over screens."""
     
-    def __init__(self, bet: int):
+    def __init__(self, bet: int, game_type: str = "higher_lower"):
         super().__init__(timeout=60)
         self.bet = bet
+        self.game_type = game_type
     
     @discord.ui.button(label="🔄 Play Again", style=discord.ButtonStyle.secondary)
     async def play_again_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1397,7 +1402,11 @@ class PlayAgainView(discord.ui.View):
         await db.add_chips(gid, uid, interaction.user.display_name, -self.bet)
         self.disable_all()
         await interaction.response.edit_message(view=self)
-        await start_higher_lower(interaction, self.bet, use_followup=True)
+        
+        if self.game_type == "video_poker":
+            await start_video_poker(interaction, self.bet, use_followup=True)
+        else:
+            await start_higher_lower(interaction, self.bet, use_followup=True)
     
     def disable_all(self):
         for item in self.children:
@@ -1535,11 +1544,277 @@ class HigherLowerView(discord.ui.View):
                 )
             
             self.disable_all()
-            await interaction.response.edit_message(embed=embed, view=PlayAgainView(game["bet"]))
+            await interaction.response.edit_message(embed=embed, view=PlayAgainView(game["bet"], "higher_lower"))
     
     def disable_all(self):
         for item in self.children:
             item.disabled = True
+
+
+# ======================== VIDEO POKER ========================
+
+# Poker hand payouts (multiplier of bet)
+POKER_PAYOUTS = {
+    "royal_flush": ("👑 Royal Flush", 250),
+    "straight_flush": ("🌟 Straight Flush", 50),
+    "four_of_a_kind": ("🎯 Four of a Kind", 25),
+    "full_house": ("🏠 Full House", 9),
+    "flush": ("💎 Flush", 6),
+    "straight": ("📏 Straight", 4),
+    "three_of_a_kind": ("🎲 Three of a Kind", 3),
+    "two_pair": ("✌️ Two Pair", 2),
+    "jacks_or_better": ("👔 Jacks or Better", 1),
+    "nothing": ("❌ Nothing", 0),
+}
+
+
+def evaluate_poker_hand(cards: list[tuple[str, str]]) -> tuple[str, str, int]:
+    """Evaluate a 5-card poker hand. Returns (hand_key, display_name, multiplier)."""
+    ranks = [c[0] for c in cards]
+    suits = [c[1] for c in cards]
+    
+    # Count ranks
+    rank_counts = {}
+    for r in ranks:
+        rank_counts[r] = rank_counts.get(r, 0) + 1
+    
+    counts = sorted(rank_counts.values(), reverse=True)
+    
+    # Check flush (all same suit)
+    is_flush = len(set(suits)) == 1
+    
+    # Check straight
+    rank_values = sorted([CARD_VALUES[r] for r in ranks])
+    is_straight = (rank_values == list(range(rank_values[0], rank_values[0] + 5)))
+    # Special case: A-2-3-4-5 (wheel)
+    if rank_values == [0, 1, 2, 3, 12]:  # 2,3,4,5,A
+        is_straight = True
+    
+    # Check for royal (10-J-Q-K-A)
+    is_royal = set(ranks) == {'10', 'J', 'Q', 'K', 'A'}
+    
+    # Determine hand
+    if is_royal and is_flush:
+        key = "royal_flush"
+    elif is_straight and is_flush:
+        key = "straight_flush"
+    elif counts == [4, 1]:
+        key = "four_of_a_kind"
+    elif counts == [3, 2]:
+        key = "full_house"
+    elif is_flush:
+        key = "flush"
+    elif is_straight:
+        key = "straight"
+    elif counts == [3, 1, 1]:
+        key = "three_of_a_kind"
+    elif counts == [2, 2, 1]:
+        key = "two_pair"
+    elif counts == [2, 1, 1, 1]:
+        # Check if pair is Jacks or better
+        pair_rank = [r for r, c in rank_counts.items() if c == 2][0]
+        if CARD_VALUES[pair_rank] >= CARD_VALUES['J']:
+            key = "jacks_or_better"
+        else:
+            key = "nothing"
+    else:
+        key = "nothing"
+    
+    name, mult = POKER_PAYOUTS[key]
+    return key, name, mult
+
+
+def poker_cards_display(cards: list[tuple[str, str]], held: list[bool] = None) -> str:
+    """Display poker cards with optional HOLD indicators."""
+    lines = []
+    card_strs = [f"`[{c[0]}{c[1]}]`" for c in cards]
+    lines.append("  ".join(card_strs))
+    
+    if held:
+        hold_strs = ["HOLD" if h else "    " for h in held]
+        lines.append("   " + "      ".join(hold_strs))
+    
+    return "\n".join(lines)
+
+
+def poker_paytable() -> str:
+    """Return a compact paytable string."""
+    return (
+        "```\n"
+        "Royal Flush    250x │ Flush         6x\n"
+        "Straight Flush  50x │ Straight      4x\n"
+        "Four of a Kind  25x │ Three of Kind 3x\n"
+        "Full House       9x │ Two Pair      2x\n"
+        "                    │ Jacks+        1x\n"
+        "```"
+    )
+
+
+async def start_video_poker(interaction: discord.Interaction, bet: int, use_followup: bool = False):
+    """Start a new Video Poker game."""
+    gid, uid = str(interaction.guild_id), str(interaction.user.id)
+    emoji = config.CHIPS["emoji"]
+    
+    deck = create_deck()
+    hand = [deck.pop() for _ in range(5)]
+    
+    # Store game state
+    _active_games[(gid, uid)] = {
+        "type": "video_poker",
+        "deck": deck,
+        "hand": hand,
+        "held": [False, False, False, False, False],
+        "bet": bet,
+        "phase": "hold",  # "hold" or "done"
+    }
+    
+    embed = discord.Embed(
+        title="🃏 Video Poker",
+        description=(
+            f"**Your Hand:**\n{poker_cards_display(hand)}\n\n"
+            f"Tap cards to **HOLD**, then press **Draw** to replace the rest.\n\n"
+            f"{poker_paytable()}"
+        ),
+        color=0x9b59b6
+    )
+    embed.set_footer(text=f"Bet: {fmt_num(bet)} {emoji}")
+    
+    view = VideoPokerHoldView()
+    if use_followup:
+        await interaction.followup.send(embed=embed, view=view)
+    else:
+        await interaction.response.send_message(embed=embed, view=view)
+
+
+class VideoPokerHoldView(discord.ui.View):
+    """View for selecting which cards to hold in Video Poker."""
+    
+    def __init__(self):
+        super().__init__(timeout=120)
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        gid, uid = str(interaction.guild_id), str(interaction.user.id)
+        game = _active_games.get((gid, uid))
+        if not game or game.get("type") != "video_poker":
+            await interaction.response.send_message("❌ This isn't your game!", ephemeral=True)
+            return False
+        return True
+    
+    async def update_display(self, interaction: discord.Interaction):
+        """Update the embed to show current hold state."""
+        gid, uid = str(interaction.guild_id), str(interaction.user.id)
+        game = _active_games.get((gid, uid))
+        emoji = config.CHIPS["emoji"]
+        
+        embed = discord.Embed(
+            title="🃏 Video Poker",
+            description=(
+                f"**Your Hand:**\n{poker_cards_display(game['hand'], game['held'])}\n\n"
+                f"Tap cards to **HOLD**, then press **Draw** to replace the rest.\n\n"
+                f"{poker_paytable()}"
+            ),
+            color=0x9b59b6
+        )
+        embed.set_footer(text=f"Bet: {fmt_num(game['bet'])} {emoji}")
+        
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="1", style=discord.ButtonStyle.secondary, row=0)
+    async def card1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.toggle_hold(interaction, 0, button)
+    
+    @discord.ui.button(label="2", style=discord.ButtonStyle.secondary, row=0)
+    async def card2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.toggle_hold(interaction, 1, button)
+    
+    @discord.ui.button(label="3", style=discord.ButtonStyle.secondary, row=0)
+    async def card3(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.toggle_hold(interaction, 2, button)
+    
+    @discord.ui.button(label="4", style=discord.ButtonStyle.secondary, row=0)
+    async def card4(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.toggle_hold(interaction, 3, button)
+    
+    @discord.ui.button(label="5", style=discord.ButtonStyle.secondary, row=0)
+    async def card5(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.toggle_hold(interaction, 4, button)
+    
+    async def toggle_hold(self, interaction: discord.Interaction, idx: int, button: discord.ui.Button):
+        gid, uid = str(interaction.guild_id), str(interaction.user.id)
+        game = _active_games.get((gid, uid))
+        
+        game["held"][idx] = not game["held"][idx]
+        
+        # Update button style
+        if game["held"][idx]:
+            button.style = discord.ButtonStyle.success
+            button.label = f"{idx+1}✓"
+        else:
+            button.style = discord.ButtonStyle.secondary
+            button.label = str(idx+1)
+        
+        await self.update_display(interaction)
+    
+    @discord.ui.button(label="🎴 Draw", style=discord.ButtonStyle.primary, row=1)
+    async def draw_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        gid, uid = str(interaction.guild_id), str(interaction.user.id)
+        game = _active_games.get((gid, uid))
+        emoji = config.CHIPS["emoji"]
+        
+        # Replace non-held cards
+        deck = game["deck"]
+        hand = game["hand"]
+        held = game["held"]
+        
+        for i in range(5):
+            if not held[i]:
+                if len(deck) < 1:
+                    deck = create_deck()
+                    # Remove cards already in hand
+                    for card in hand:
+                        if card in deck:
+                            deck.remove(card)
+                hand[i] = deck.pop()
+        
+        # Evaluate final hand
+        hand_key, hand_name, multiplier = evaluate_poker_hand(hand)
+        
+        # Remove from active games
+        del _active_games[(gid, uid)]
+        
+        if multiplier > 0:
+            # Winner!
+            winnings = int(game["bet"] * multiplier)
+            await db.add_chips(gid, uid, interaction.user.display_name, winnings)
+            new_balance = await db.get_balance(gid, uid)
+            profit = winnings - game["bet"]
+            
+            embed = discord.Embed(
+                title="🃏 Video Poker — You Win! ✓",
+                description=(
+                    f"**Final Hand:**\n{poker_cards_display(hand)}\n\n"
+                    f"**{hand_name}** • Multiplier: **{multiplier}x**\n\n"
+                    f"💰 You won **{fmt_num(winnings)}** {emoji} (+{fmt_num(profit)} profit)\n"
+                    f"Balance: **{fmt_num(new_balance)}** {emoji}"
+                ),
+                color=0x2ecc71
+            )
+        else:
+            # Loser
+            new_balance = await db.get_balance(gid, uid)
+            
+            embed = discord.Embed(
+                title="🃏 Video Poker — No Win ✗",
+                description=(
+                    f"**Final Hand:**\n{poker_cards_display(hand)}\n\n"
+                    f"**{hand_name}**\n\n"
+                    f"💸 You lost **{fmt_num(game['bet'])}** {emoji}\n"
+                    f"Balance: **{fmt_num(new_balance)}** {emoji}"
+                ),
+                color=0xe74c3c
+            )
+        
+        await interaction.response.edit_message(embed=embed, view=PlayAgainView(game["bet"], "video_poker"))
 
 
 @bot.tree.command(name="gamble", description="Play gambling games to win chips! 🎰")
@@ -1547,6 +1822,7 @@ class HigherLowerView(discord.ui.View):
 @app_commands.choices(
     game=[
         app_commands.Choice(name="🎴 Higher or Lower", value="higher_lower"),
+        app_commands.Choice(name="🃏 Video Poker", value="video_poker"),
     ]
 )
 async def gamble_cmd(interaction: discord.Interaction, game: app_commands.Choice[str]):
