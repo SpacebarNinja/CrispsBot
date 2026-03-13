@@ -1130,7 +1130,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v2.2.0"
+BOT_VERSION = "v2.2.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1884,7 +1884,7 @@ def stb_tiles_display(tiles: list[int], selected: list[int] = None) -> str:
             else:
                 line += f"`[{i}]` "
         else:
-            line += "`[X]` "  # Shut tile
+            line += "`[ ]` "  # Shut tile
     return line.strip()
 
 
