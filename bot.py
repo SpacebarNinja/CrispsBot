@@ -1392,38 +1392,6 @@ class HigherLowerView(discord.ui.View):
     async def lower_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.make_guess(interaction, "lower")
     
-    @discord.ui.button(label="💰 Cash Out", style=discord.ButtonStyle.success)
-    async def cashout_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        gid, uid = str(interaction.guild_id), str(interaction.user.id)
-        game = _active_games.pop((gid, uid), None)
-        
-        if not game:
-            await interaction.response.send_message("❌ No active game found.", ephemeral=True)
-            return
-        
-        emoji = config.CHIPS["emoji"]
-        multiplier = hl_multiplier(game["streak"])
-        winnings = int(game["bet"] * multiplier)
-        
-        await db.add_chips(gid, uid, interaction.user.display_name, winnings)
-        new_balance = await db.get_balance(gid, uid)
-        
-        profit = winnings - game["bet"]
-        
-        embed = discord.Embed(
-            title="🎴 Higher or Lower — Cashed Out!",
-            description=(
-                f"**Final card:** {card_str(game['current'])}\n\n"
-                f"Streak: **{game['streak']}** • Multiplier: **{multiplier:.1f}x**\n\n"
-                f"💰 You won **{fmt_num(winnings)}** {emoji} (+{fmt_num(profit)} profit)\n"
-                f"Balance: **{fmt_num(new_balance)}** {emoji}"
-            ),
-            color=0x2ecc71
-        )
-        
-        self.disable_all()
-        await interaction.response.edit_message(embed=embed, view=self)
-    
     async def make_guess(self, interaction: discord.Interaction, guess: str):
         gid, uid = str(interaction.guild_id), str(interaction.user.id)
         game = _active_games.get((gid, uid))
@@ -1474,7 +1442,7 @@ class HigherLowerView(discord.ui.View):
                 title="🎴 Higher or Lower — Correct! ✓",
                 description=(
                     f"**Previous:** {card_str(current)} → **Next:** {card_str(next_card)}\n\n"
-                    f"The card was **{result}**! Keep going or cash out?\n\n"
+                    f"The card was **{result}**! Keep going!\n\n"
                     f"Streak: **{game['streak']}** • Multiplier: **{multiplier:.1f}x** • Value: **{fmt_num(potential)}** {emoji}"
                 ),
                 color=0x3498db
@@ -1483,18 +1451,39 @@ class HigherLowerView(discord.ui.View):
             await interaction.response.edit_message(embed=embed, view=self)
         
         else:
-            # Wrong guess - lose everything
+            # Wrong guess
             del _active_games[(gid, uid)]
             
-            embed = discord.Embed(
-                title="🎴 Higher or Lower — Busted! ✗",
-                description=(
-                    f"**Previous:** {card_str(current)} → **Next:** {card_str(next_card)}\n\n"
-                    f"The card was **{result}**. You guessed **{guess}**.\n\n"
-                    f"💸 You lost **{fmt_num(game['bet'])}** {emoji}"
-                ),
-                color=0xe74c3c
-            )
+            # If streak >= 4 (1.0x+), they still win!
+            if game["streak"] >= 4:
+                multiplier = hl_multiplier(game["streak"])
+                winnings = int(game["bet"] * multiplier)
+                await db.add_chips(gid, uid, interaction.user.display_name, winnings)
+                new_balance = await db.get_balance(gid, uid)
+                profit = winnings - game["bet"]
+                
+                embed = discord.Embed(
+                    title="🎴 Higher or Lower — You Win! ✓",
+                    description=(
+                        f"**Previous:** {card_str(current)} → **Next:** {card_str(next_card)}\n\n"
+                        f"The card was **{result}**, but your streak saved you!\n\n"
+                        f"Streak: **{game['streak']}** • Multiplier: **{multiplier:.1f}x**\n"
+                        f"💰 You won **{fmt_num(winnings)}** {emoji} (+{fmt_num(profit)} profit)\n"
+                        f"Balance: **{fmt_num(new_balance)}** {emoji}"
+                    ),
+                    color=0x2ecc71
+                )
+            else:
+                embed = discord.Embed(
+                    title="🎴 Higher or Lower — Busted! ✗",
+                    description=(
+                        f"**Previous:** {card_str(current)} → **Next:** {card_str(next_card)}\n\n"
+                        f"The card was **{result}**. You guessed **{guess}**.\n\n"
+                        f"💸 You lost **{fmt_num(game['bet'])}** {emoji}\n"
+                        f"(Reach streak 4+ to keep your winnings!)"
+                    ),
+                    color=0xe74c3c
+                )
             
             self.disable_all()
             await interaction.response.edit_message(embed=embed, view=self)
