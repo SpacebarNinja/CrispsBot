@@ -278,17 +278,6 @@ async def get_total_users(guild_id: str) -> int:
         return row[0] if row else 0
 
 
-async def get_all_chips(guild_id: str) -> list[tuple]:
-    """Get all users' chip data for export. Returns list of (user_id, username, chips)."""
-    async with get_connection() as conn:
-        cursor = await conn.execute(
-            "SELECT user_id, username, chips FROM users WHERE guild_id = ? AND chips > 0",
-            (guild_id,)
-        )
-        rows = await cursor.fetchall()
-        return [(r[0], r[1], r[2]) for r in rows]
-
-
 # ==================== DAILY CHATTER ====================
 
 async def increment_chatter(guild_id: str, user_id: str, username: str):
@@ -355,38 +344,6 @@ async def reset_questions(guild_id: str, question_type: str):
             "DELETE FROM question_usage WHERE guild_id = ? AND question_type = ?",
             (guild_id, question_type)
         )
-        await conn.commit()
-
-
-async def get_all_question_usage(guild_id: str) -> dict[str, list[str]]:
-    """Get all question usage data for export. Returns {question_type: [text_keys]}."""
-    async with get_connection() as conn:
-        cursor = await conn.execute(
-            "SELECT question_type, question_index FROM question_usage WHERE guild_id = ?",
-            (guild_id,)
-        )
-        rows = await cursor.fetchall()
-        result: dict[str, list[str]] = {}
-        for qtype, key in rows:
-            if qtype not in result:
-                result[qtype] = []
-            result[qtype].append(key)
-        return result
-
-
-async def import_question_usage(guild_id: str, data: dict[str, list[str]]):
-    """Import question usage data (text-based keys). Clears existing data first."""
-    async with get_connection() as conn:
-        # Clear existing question usage for this guild
-        await conn.execute("DELETE FROM question_usage WHERE guild_id = ?", (guild_id,))
-        # Import new data
-        now = datetime.now(timezone.utc).isoformat()
-        for qtype, keys in data.items():
-            for key in keys:
-                await conn.execute(
-                    "INSERT INTO question_usage (guild_id, question_type, question_index, used_at) VALUES (?, ?, ?, ?)",
-                    (guild_id, qtype, key, now)
-                )
         await conn.commit()
 
 

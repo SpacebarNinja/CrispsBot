@@ -13,9 +13,6 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Optional
 import os
-import zlib
-import base64
-import json
 import yaml
 from pathlib import Path
 
@@ -853,8 +850,6 @@ async def schedule_loop():
                 await db.set_state(gid, "last_chatter_post", now_utc.isoformat())
                 try:
                     await do_chatter_rewards(gid)
-                    # Auto-save after chatter rewards
-                    await do_autosave(gid)
                 except Exception as e:
                     print(f"Error doing chatter rewards: {e}")
 
@@ -1135,7 +1130,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v1.75.0"
+BOT_VERSION = "v1.75.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1217,155 +1212,6 @@ async def chips_cmd(interaction: discord.Interaction, user: discord.Member, amou
     await interaction.response.send_message(
         f"Set {user.mention}'s chips to **{fmt_num(amount)} {config.CHIPS['emoji']}**", ephemeral=True
     )
-
-
-@bot.tree.command(name="exportdata", description="Save bot data to the backup message (admin only)")
-@app_commands.default_permissions(administrator=True)
-async def exportdata_cmd(interaction: discord.Interaction):
-    gid = str(interaction.guild_id)
-    backup_msg_id = HARDCODED["backup_message_id"]
-    
-    await interaction.response.defer(ephemeral=True)
-    
-    # Build export data
-    all_chips = await db.get_all_chips(gid)
-    chips_data = {uid: chips for uid, _, chips in all_chips}
-    questions_data = await db.get_all_question_usage(gid)
-    
-    export_data = {
-        "chips": chips_data,
-        "questions": questions_data,
-    }
-    
-    if not chips_data and not questions_data:
-        await interaction.followup.send(f"No data to export for guild `{gid}`.", ephemeral=True)
-        return
-    
-    json_str = json.dumps(export_data, separators=(',', ':'))
-    compressed = zlib.compress(json_str.encode('utf-8'), level=9)
-    encoded = base64.b64encode(compressed).decode('ascii')
-    
-    chip_count = len(chips_data)
-    bag_count = len(questions_data)
-    total_questions = sum(len(keys) for keys in questions_data.values())
-    
-    # Find and edit the backup message
-    backup_msg = None
-    for channel in interaction.guild.text_channels:
-        try:
-            backup_msg = await channel.fetch_message(int(backup_msg_id))
-            break
-        except Exception:
-            continue
-    
-    if not backup_msg:
-        await interaction.followup.send(
-            f"❌ Could not find backup message (ID: {backup_msg_id}). Use `!placedata` to create a new one.",
-            ephemeral=True
-        )
-        return
-    
-    # Update the message
-    now = datetime.now(MANILA_TZ)
-    timestamp = now.strftime("%b %d, %Y at %I:%M %p")
-    new_content = f"```\n{encoded}\n```\nLast saved: {timestamp}"
-    
-    try:
-        await backup_msg.edit(content=new_content)
-        await interaction.followup.send(
-            f"✅ **Backup saved!** ({chip_count} users, {bag_count} question bags, {total_questions} questions)\n"
-            f"Message: {backup_msg.jump_url}",
-            ephemeral=True
-        )
-    except Exception as e:
-        await interaction.followup.send(f"❌ Failed to update backup message: {e}", ephemeral=True)
-
-
-@bot.tree.command(name="importdata", description="Restore bot data from backup (copy the code from backup message)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.describe(data="The compressed data string from the backup message")
-async def importdata_cmd(interaction: discord.Interaction, data: str):
-    gid = str(interaction.guild_id)
-    
-    try:
-        compressed = base64.b64decode(data.strip())
-        json_str = zlib.decompress(compressed).decode('utf-8')
-        import_data = json.loads(json_str)
-        
-        if not isinstance(import_data, dict):
-            raise ValueError("Invalid data format")
-        
-        if "chips" in import_data:
-            chips_data = import_data.get("chips", {})
-            questions_data = import_data.get("questions", {})
-        else:
-            chips_data = import_data
-            questions_data = {}
-        
-        chip_count = 0
-        for uid, chips in chips_data.items():
-            await db.set_chips(gid, str(uid), f"User_{uid}", int(chips))
-            chip_count += 1
-        
-        if questions_data:
-            await db.import_question_usage(gid, questions_data)
-        bag_count = len(questions_data)
-        
-        await interaction.response.send_message(
-            f"✅ Successfully imported **{chip_count}** users' chips and **{bag_count}** question bags!",
-            ephemeral=True
-        )
-    except Exception as e:
-        await interaction.response.send_message(
-            f"❌ Failed to import: Invalid data format. Make sure you copied the entire string from `/exportdata`.\nError: {str(e)}",
-            ephemeral=True
-        )
-
-
-async def do_autosave(guild_id: str):
-    """Auto-save bot data by editing the backup message."""
-    backup_msg_id = HARDCODED["backup_message_id"]
-    
-    # Find the message - check all text channels
-    backup_msg = None
-    for channel in bot.get_all_channels():
-        if isinstance(channel, discord.TextChannel):
-            try:
-                backup_msg = await channel.fetch_message(int(backup_msg_id))
-                break
-            except Exception:
-                continue
-    
-    if not backup_msg:
-        print(f"[Autosave] Could not find backup message {backup_msg_id}")
-        return
-    
-    # Build export data
-    all_chips = await db.get_all_chips(guild_id)
-    chips_data = {uid: chips for uid, _, chips in all_chips}
-    questions_data = await db.get_all_question_usage(guild_id)
-    
-    export_data = {
-        "chips": chips_data,
-        "questions": questions_data,
-    }
-    
-    json_str = json.dumps(export_data, separators=(',', ':'))
-    compressed = zlib.compress(json_str.encode('utf-8'), level=9)
-    encoded = base64.b64encode(compressed).decode('ascii')
-    
-    # Timestamp
-    now = datetime.now(MANILA_TZ)
-    timestamp = now.strftime("%b %d, %Y at %I:%M %p")
-    
-    # Edit the message
-    new_content = f"```\n{encoded}\n```\nLast saved: {timestamp}"
-    
-    try:
-        await backup_msg.edit(content=new_content)
-        print(f"[Autosave] Updated backup for guild {guild_id}")
-    except Exception as e:
-        print(f"[Autosave] Failed to edit message: {e}")
 
 
 @bot.tree.command(name="codepurple", description="Force a Code Purple message (admin only)")
@@ -2371,17 +2217,6 @@ async def on_message(message: discord.Message):
                 view = WordGameActiveView()
                 new_msg = await message.channel.send(embed=embed, view=view)
                 await db.update_word_game_message(gid, str(new_msg.id))
-
-    # --- !placedata command (temporary, for setting up backup message) ---
-    # if content_lower == "!placedata":
-    #     if message.author.guild_permissions.administrator:
-    #         gid = str(message.guild.id)
-    #         now = datetime.now(MANILA_TZ)
-    #         timestamp = now.strftime("%b %d, %Y at %I:%M %p")
-    #         backup_msg = await message.channel.send(f"```\n\n```\nLast saved: {timestamp}")
-    #         await db.set_state(gid, "backup_message_id", str(backup_msg.id))
-    #         await message.reply(f"Backup message placed! ID: `{backup_msg.id}`", mention_author=False)
-    #     return
 
     await bot.process_commands(message)
 
