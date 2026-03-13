@@ -1,0 +1,28 @@
+# ======================== SCHEDULES ========================
+question_schedules:
+  casual:
+    hour: 20
+    minute: 0
+  typology:
+    hour: 0
+    minute: 0
+
+# ======================== DISCORD IDS ========================
+ids:
+  ping_role_casual: "1470111189869527131"
+  ping_role_typology: "1470111535559999590"
+  channel_casual: "1470111942696767548"
+  channel_typology: "1450418107368738848"
+  channel_codepurple: "1446277377771573402"
+  channel_activity_rewards: "1446277377771573402"
+  channel_chatter_rewards: "1470204258992390164"
+  channel_hall_of_fame: "1479638228834189457"
+  backup_message_id: "1479654378842357810"
+  role_picker_message_casual: "1470113556476334182"
+  role_picker_message_typology: "1470113576017723564"
+
+# ======================== BLACKLISTS ========================
+blacklist_categories:
+  - "1446269291123966044"
+  - "1446277444372791458"
+blacklist_channels: []
