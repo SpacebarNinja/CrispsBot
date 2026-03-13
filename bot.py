@@ -1474,12 +1474,24 @@ class HigherLowerView(discord.ui.View):
                     color=0x2ecc71
                 )
             else:
+                # Partial refund based on multiplier (streak 1-3 gives 0.25x-0.75x back)
+                multiplier = hl_multiplier(game["streak"])
+                refund = int(game["bet"] * multiplier)
+                loss = game["bet"] - refund
+                
+                if refund > 0:
+                    await db.add_chips(gid, uid, interaction.user.display_name, refund)
+                
+                new_balance = await db.get_balance(gid, uid)
+                
                 embed = discord.Embed(
                     title="🎴 Higher or Lower — Busted! ✗",
                     description=(
                         f"**Previous:** {card_str(current)} → **Next:** {card_str(next_card)}\n\n"
                         f"The card was **{result}**. You guessed **{guess}**.\n\n"
-                        f"💸 You lost **{fmt_num(game['bet'])}** {emoji}\n"
+                        f"Streak: **{game['streak']}** • Multiplier: **{multiplier:.1f}x**\n"
+                        f"💸 You lost **{fmt_num(loss)}** {emoji}" + (f" (kept {fmt_num(refund)})" if refund > 0 else "") + "\n"
+                        f"Balance: **{fmt_num(new_balance)}** {emoji}\n"
                         f"(Reach streak 4+ to keep your winnings!)"
                     ),
                     color=0xe74c3c
