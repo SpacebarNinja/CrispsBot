@@ -1367,6 +1367,40 @@ async def start_higher_lower(interaction: discord.Interaction, bet: int):
     await interaction.response.send_message(embed=embed, view=view)
 
 
+class PlayAgainView(discord.ui.View):
+    """Play Again button shown on game-over screens."""
+    
+    def __init__(self, bet: int):
+        super().__init__(timeout=60)
+        self.bet = bet
+    
+    @discord.ui.button(label="🔄 Play Again", style=discord.ButtonStyle.secondary)
+    async def play_again_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        gid, uid = str(interaction.guild_id), str(interaction.user.id)
+        emoji = config.CHIPS["emoji"]
+        
+        if (gid, uid) in _active_games:
+            await interaction.response.send_message("❌ You already have a game in progress!", ephemeral=True)
+            return
+        
+        balance = await db.get_balance(gid, uid)
+        if self.bet > balance:
+            await interaction.response.send_message(
+                f"❌ Not enough crisps! You have **{fmt_num(balance)}** {emoji}",
+                ephemeral=True
+            )
+            return
+        
+        await db.add_chips(gid, uid, interaction.user.display_name, -self.bet)
+        self.disable_all()
+        await interaction.response.edit_message(view=self)
+        await start_higher_lower(interaction, self.bet)
+    
+    def disable_all(self):
+        for item in self.children:
+            item.disabled = True
+
+
 class HigherLowerView(discord.ui.View):
     """Game controls for Higher or Lower."""
     
@@ -1498,7 +1532,7 @@ class HigherLowerView(discord.ui.View):
                 )
             
             self.disable_all()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=PlayAgainView(game["bet"]))
     
     def disable_all(self):
         for item in self.children:
