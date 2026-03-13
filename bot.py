@@ -1332,7 +1332,7 @@ class BetModal(discord.ui.Modal, title="Place Your Bet!"):
             await start_higher_lower(interaction, bet)
 
 
-async def start_higher_lower(interaction: discord.Interaction, bet: int):
+async def start_higher_lower(interaction: discord.Interaction, bet: int, use_followup: bool = False):
     """Start a new Higher or Lower game."""
     gid, uid = str(interaction.guild_id), str(interaction.user.id)
     emoji = config.CHIPS["emoji"]
@@ -1364,7 +1364,10 @@ async def start_higher_lower(interaction: discord.Interaction, bet: int):
     embed.set_footer(text=f"Bet: {fmt_num(bet)} {emoji}")
     
     view = HigherLowerView()
-    await interaction.response.send_message(embed=embed, view=view)
+    if use_followup:
+        await interaction.followup.send(embed=embed, view=view)
+    else:
+        await interaction.response.send_message(embed=embed, view=view)
 
 
 class PlayAgainView(discord.ui.View):
@@ -1394,7 +1397,7 @@ class PlayAgainView(discord.ui.View):
         await db.add_chips(gid, uid, interaction.user.display_name, -self.bet)
         self.disable_all()
         await interaction.response.edit_message(view=self)
-        await start_higher_lower(interaction, self.bet)
+        await start_higher_lower(interaction, self.bet, use_followup=True)
     
     def disable_all(self):
         for item in self.children:
