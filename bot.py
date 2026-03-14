@@ -1130,7 +1130,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v2.3.3"
+BOT_VERSION = "v2.3.4"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1470,9 +1470,15 @@ class HigherLowerView(discord.ui.View):
             del _active_games[(self.gid, self.uid)]
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        gid, uid = str(interaction.guild_id), str(interaction.user.id)
-        if (gid, uid) not in _active_games:
+        # Verify the clicker is the game owner
+        if str(interaction.user.id) != self.uid:
             await interaction.response.send_message("❌ This isn't your game!", ephemeral=True)
+            return False
+        
+        # Check if game still exists (using stored keys)
+        game = _active_games.get((self.gid, self.uid))
+        if not game or game.get("type") != "higher_lower":
+            await interaction.response.send_message("❌ Game expired. Start a new one!", ephemeral=True)
             return False
         return True
     
@@ -1485,8 +1491,7 @@ class HigherLowerView(discord.ui.View):
         await self.make_guess(interaction, "lower")
     
     async def make_guess(self, interaction: discord.Interaction, guess: str):
-        gid, uid = str(interaction.guild_id), str(interaction.user.id)
-        game = _active_games.get((gid, uid))
+        game = _active_games.get((self.gid, self.uid))
         
         if not game:
             await interaction.response.send_message("❌ No active game found.", ephemeral=True)
@@ -1546,14 +1551,14 @@ class HigherLowerView(discord.ui.View):
         
         else:
             # Wrong guess
-            del _active_games[(gid, uid)]
+            del _active_games[(self.gid, self.uid)]
             
             # If streak >= 4 (1.0x+), they still win!
             if game["streak"] >= 4:
                 multiplier = hl_multiplier(game["streak"])
                 winnings = int(game["bet"] * multiplier)
-                await db.add_chips(gid, uid, interaction.user.display_name, winnings)
-                new_balance = await db.get_balance(gid, uid)
+                await db.add_chips(self.gid, self.uid, interaction.user.display_name, winnings)
+                new_balance = await db.get_balance(self.gid, self.uid)
                 profit = winnings - game["bet"]
                 
                 embed = discord.Embed(
@@ -1574,9 +1579,9 @@ class HigherLowerView(discord.ui.View):
                 loss = game["bet"] - refund
                 
                 if refund > 0:
-                    await db.add_chips(gid, uid, interaction.user.display_name, refund)
+                    await db.add_chips(self.gid, self.uid, interaction.user.display_name, refund)
                 
-                new_balance = await db.get_balance(gid, uid)
+                new_balance = await db.get_balance(self.gid, self.uid)
                 
                 embed = discord.Embed(
                     title="🎴 Higher or Lower — Busted! ✗",
@@ -1759,17 +1764,21 @@ class VideoPokerHoldView(discord.ui.View):
             del _active_games[(self.gid, self.uid)]
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        gid, uid = str(interaction.guild_id), str(interaction.user.id)
-        game = _active_games.get((gid, uid))
-        if not game or game.get("type") != "video_poker":
+        # Verify the clicker is the game owner
+        if str(interaction.user.id) != self.uid:
             await interaction.response.send_message("❌ This isn't your game!", ephemeral=True)
+            return False
+        
+        # Check if game still exists (using stored keys)
+        game = _active_games.get((self.gid, self.uid))
+        if not game or game.get("type") != "video_poker":
+            await interaction.response.send_message("❌ Game expired. Start a new one!", ephemeral=True)
             return False
         return True
     
     async def update_display(self, interaction: discord.Interaction):
         """Update the embed to show current hold state."""
-        gid, uid = str(interaction.guild_id), str(interaction.user.id)
-        game = _active_games.get((gid, uid))
+        game = _active_games.get((self.gid, self.uid))
         emoji = config.CHIPS["emoji"]
         
         embed = discord.Embed(
@@ -1806,8 +1815,7 @@ class VideoPokerHoldView(discord.ui.View):
         await self.toggle_hold(interaction, 4, button)
     
     async def toggle_hold(self, interaction: discord.Interaction, idx: int, button: discord.ui.Button):
-        gid, uid = str(interaction.guild_id), str(interaction.user.id)
-        game = _active_games.get((gid, uid))
+        game = _active_games.get((self.gid, self.uid))
         
         game["held"][idx] = not game["held"][idx]
         
@@ -1823,8 +1831,7 @@ class VideoPokerHoldView(discord.ui.View):
     
     @discord.ui.button(label="🎴 Draw", style=discord.ButtonStyle.primary, row=1)
     async def draw_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        gid, uid = str(interaction.guild_id), str(interaction.user.id)
-        game = _active_games.get((gid, uid))
+        game = _active_games.get((self.gid, self.uid))
         emoji = config.CHIPS["emoji"]
         
         await interaction.response.defer()
@@ -1848,13 +1855,13 @@ class VideoPokerHoldView(discord.ui.View):
         hand_key, hand_name, multiplier = evaluate_poker_hand(hand)
         
         # Remove from active games
-        del _active_games[(gid, uid)]
+        del _active_games[(self.gid, self.uid)]
         
         if multiplier > 0:
             # Winner!
             winnings = int(game["bet"] * multiplier)
-            await db.add_chips(gid, uid, interaction.user.display_name, winnings)
-            new_balance = await db.get_balance(gid, uid)
+            await db.add_chips(self.gid, self.uid, interaction.user.display_name, winnings)
+            new_balance = await db.get_balance(self.gid, self.uid)
             profit = winnings - game["bet"]
             
             embed = discord.Embed(
@@ -1869,7 +1876,7 @@ class VideoPokerHoldView(discord.ui.View):
             )
         else:
             # Loser
-            new_balance = await db.get_balance(gid, uid)
+            new_balance = await db.get_balance(self.gid, self.uid)
             
             embed = discord.Embed(
                 title="🃏 Video Poker — No Win ✗",
@@ -1990,10 +1997,15 @@ class ShutTheBoxView(discord.ui.View):
             del _active_games[(self.gid, self.uid)]
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        gid, uid = str(interaction.guild_id), str(interaction.user.id)
-        game = _active_games.get((gid, uid))
-        if not game or game.get("type") != "shut_the_box":
+        # Verify the clicker is the game owner
+        if str(interaction.user.id) != self.uid:
             await interaction.response.send_message("❌ This isn't your game!", ephemeral=True)
+            return False
+        
+        # Check if game still exists (using stored keys)
+        game = _active_games.get((self.gid, self.uid))
+        if not game or game.get("type") != "shut_the_box":
+            await interaction.response.send_message("❌ Game expired. Start a new one!", ephemeral=True)
             return False
         return True
     
@@ -2077,8 +2089,7 @@ class ShutTheBoxView(discord.ui.View):
         await self.toggle_tile(interaction, 9)
     
     async def toggle_tile(self, interaction: discord.Interaction, tile: int):
-        gid, uid = str(interaction.guild_id), str(interaction.user.id)
-        game = _active_games.get((gid, uid))
+        game = _active_games.get((self.gid, self.uid))
         emoji = config.CHIPS["emoji"]
         
         if game["phase"] != "select":
@@ -2118,8 +2129,7 @@ class ShutTheBoxView(discord.ui.View):
     
     @discord.ui.button(label="🎲 Roll Dice", style=discord.ButtonStyle.success, custom_id="roll_dice", row=2)
     async def roll_dice_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        gid, uid = str(interaction.guild_id), str(interaction.user.id)
-        game = _active_games.get((gid, uid))
+        game = _active_games.get((self.gid, self.uid))
         emoji = config.CHIPS["emoji"]
         
         if game["phase"] != "roll":
@@ -2143,8 +2153,8 @@ class ShutTheBoxView(discord.ui.View):
         
         if not combinations:
             # No valid moves - GAME OVER
-            del _active_games[(gid, uid)]
-            new_balance = await db.get_balance(gid, uid)
+            del _active_games[(self.gid, self.uid)]
+            new_balance = await db.get_balance(self.gid, self.uid)
             
             dice_str = f"[{dice_rolls[0]}]" if num_dice == 1 else f"[{dice_rolls[0]}] [{dice_rolls[1]}]"
             
@@ -2194,8 +2204,7 @@ class ShutTheBoxView(discord.ui.View):
     
     @discord.ui.button(label="✓ Shut Tiles", style=discord.ButtonStyle.secondary, custom_id="confirm_shut", disabled=True, row=2)
     async def confirm_shut_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        gid, uid = str(interaction.guild_id), str(interaction.user.id)
-        game = _active_games.get((gid, uid))
+        game = _active_games.get((self.gid, self.uid))
         emoji = config.CHIPS["emoji"]
         
         if game["phase"] != "select":
@@ -2218,10 +2227,10 @@ class ShutTheBoxView(discord.ui.View):
         
         # Check if all tiles shut = WIN!
         if not game["tiles"]:
-            del _active_games[(gid, uid)]
+            del _active_games[(self.gid, self.uid)]
             winnings = game["bet"] * SHUT_THE_BOX_PAYOUT
-            await db.add_chips(gid, uid, interaction.user.display_name, winnings)
-            new_balance = await db.get_balance(gid, uid)
+            await db.add_chips(self.gid, self.uid, interaction.user.display_name, winnings)
+            new_balance = await db.get_balance(self.gid, self.uid)
             profit = winnings - game["bet"]
             
             embed = discord.Embed(
