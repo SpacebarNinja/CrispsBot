@@ -1168,7 +1168,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v2.5.0"
+BOT_VERSION = "v2.5.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1233,11 +1233,8 @@ async def donate_cmd(interaction: discord.Interaction, user: discord.Member, amo
     await db.add_chips(gid, donor_uid, interaction.user.display_name, -amount)
     await db.add_chips(gid, recipient_uid, user.display_name, amount)
     
-    new_donor_balance = await db.get_balance(gid, donor_uid)
-    
     await interaction.followup.send(
-        f"🎁 **{interaction.user.display_name}** donated **{fmt_num(amount)}** {emoji} to **{user.display_name}**!\n"
-        f"Your new balance: **{fmt_num(new_donor_balance)}** {emoji}"
+        f"🎁 {interaction.user.mention} donated **+{fmt_num(amount)}** {emoji} to {user.mention}!"
     )
 
 
