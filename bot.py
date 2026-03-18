@@ -16,12 +16,16 @@ from typing import Optional
 import os
 import yaml
 from pathlib import Path
+from collections import deque
+import time
 
 from dotenv import load_dotenv
 import config
 import db
 
 # ======================== SETUP ========================
+
+BOT_START_TIME = time.time()
 
 load_dotenv()
 
@@ -51,6 +55,8 @@ HARDCODED["blacklist_channels"] = settings_data["blacklist_channels"]
 
 # Hall of Fame: track which messages have been forwarded (in-memory cache)
 _hall_of_fame_forwarded: set[int] = set()
+_hall_of_fame_order: deque[int] = deque()
+HOF_CACHE_MAX = 2000
 
 
 def fmt_num(n: int) -> str:
@@ -263,6 +269,14 @@ def format_story(words_str: str) -> str:
     if story:
         story = story[0].upper() + story[1:]
     return story
+
+def _hof_mark_forwarded(msg_id: int):
+    if msg_id not in _hall_of_fame_forwarded:
+        _hall_of_fame_forwarded.add(msg_id)
+        _hall_of_fame_order.append(msg_id)
+        if len(_hall_of_fame_order) > HOF_CACHE_MAX:
+            evicted = _hall_of_fame_order.popleft()
+            _hall_of_fame_forwarded.discard(evicted)
 
 
 # ======================== TYPOLOGY FORMATTING ========================
@@ -812,62 +826,33 @@ async def schedule_loop():
     for guild in bot.guilds:
         gid = str(guild.id)
 
-        # DISABLED: Automatic QOTD and typology posting
-        # for qtype, sched in QUESTION_SCHEDULES.items():
-        #     if now_manila.hour == sched["hour"] and now_manila.minute == sched["minute"]:
-        #         # Check if already posted recently (within 23 hours) - prevents race conditions
-        #         last_iso = await db.get_state(gid, f"last_{qtype}_question")
-        #         should_post = True
-        #         if last_iso:
-        #             last_dt = datetime.fromisoformat(last_iso)
-        #             if last_dt.tzinfo is None:
-        #                 last_dt = last_dt.replace(tzinfo=timezone.utc)
-        #             hours_since = (now_utc - last_dt).total_seconds() / 3600
-        #             if hours_since < 23:  # Posted within last 23 hours = skip
-        #                 should_post = False
-        #         
-        #         if should_post:
-        #             await db.set_state(gid, f"last_{qtype}_question", now_utc.isoformat())
-        #             
-        #             post_fn = QUESTION_POST_FNS.get(qtype)
-        #             if post_fn:
-        #                 try:
-        #                     await post_fn(gid)
-        #                     print(f"[Schedule] Posted {qtype} question for guild {gid}")
-        #                 except Exception as e:
-        #                     print(f"Error posting {qtype}: {e}")
+        state_keys = [
+            "last_daily_question", 
+            "daily_question_toggle", 
+            "last_chatter_post", 
+            "last_activity_post"
+        ]
+        states = await db.get_states(gid, state_keys)
+
 
         # --- Alternating Daily Question (12:00 PM Manila) ---
         # Day 1: Casual, Day 2: Typology, Day 1: Casual, etc.
         if now_manila.hour == 12 and now_manila.minute == 0:
-            last_iso = await db.get_state(gid, "last_daily_question")
+            last_iso = states.get("last_daily_question")
             should_post = True
             if last_iso:
-                last_dt = datetime.fromisoformat(last_iso)
-                if last_dt.tzinfo is None:
-                    last_dt = last_dt.replace(tzinfo=timezone.utc)
-                hours_since = (now_utc - last_dt).total_seconds() / 3600
-                if hours_since < 23:
+                last_dt = datetime.fromisoformat(last_iso).replace(tzinfo=timezone.utc)
+                if (now_utc - last_dt).total_seconds() / 3600 < 23:
                     should_post = False
             
             if should_post:
                 await db.set_state(gid, "last_daily_question", now_utc.isoformat())
-                
-                # Check which one to post (alternate based on counter)
-                counter_str = await db.get_state(gid, "daily_question_toggle") or "0"
-                counter = int(counter_str)
-                
+                counter = int(states.get("daily_question_toggle") or "0")
                 try:
-                    if counter % 2 == 0:
-                        # Even = Casual
+                    if counter % 2 == 0: # Even = Casual
                         await post_casual(gid)
-                        print(f"[Schedule] Posted CASUAL question for guild {gid}")
-                    else:
-                        # Odd = Typology
+                    else: # Odd = Typology
                         await post_typology(gid)
-                        print(f"[Schedule] Posted TYPOLOGY question for guild {gid}")
-                    
-                    # Increment counter for next day
                     await db.set_state(gid, "daily_question_toggle", str(counter + 1))
                 except Exception as e:
                     print(f"Error posting daily question: {e}")
@@ -875,14 +860,11 @@ async def schedule_loop():
         # --- Chatter Rewards (fixed Manila time) ---
         sched = config.CHATTER_SCHEDULE
         if now_manila.hour == sched["hour"] and now_manila.minute == sched["minute"]:
-            last = await db.get_state(gid, "last_chatter_post")
+            last = states.get("last_chatter_post")
             should_post = True
             if last:
-                ld = datetime.fromisoformat(last)
-                if ld.tzinfo is None:
-                    ld = ld.replace(tzinfo=timezone.utc)
-                hours_since = (now_utc - ld).total_seconds() / 3600
-                if hours_since < 23:  # Posted within last 23 hours = skip
+                ld = datetime.fromisoformat(last).replace(tzinfo=timezone.utc)
+                if (now_utc - ld).total_seconds() / 3600 < 23: # Period within last 23 hours = Skip
                     should_post = False
             if should_post:
                 await db.set_state(gid, "last_chatter_post", now_utc.isoformat())
@@ -891,17 +873,15 @@ async def schedule_loop():
                 except Exception as e:
                     print(f"Error doing chatter rewards: {e}")
 
+        # --- Activity Rewards ---
         act_sched = config.ACTIVITY_REWARDS
         if now_manila.hour == act_sched["hour"] and now_manila.minute == act_sched["minute"]:
             if config.FEATURES.get("activity_rewards"):
-                last = await db.get_state(gid, "last_activity_post")
+                last = states.get("last_activity_post")
                 should_post = True
                 if last:
-                    ld = datetime.fromisoformat(last)
-                    if ld.tzinfo is None:
-                        ld = ld.replace(tzinfo=timezone.utc)
-                    hours_since = (now_utc - ld).total_seconds() / 3600
-                    if hours_since < 23:
+                    ld = datetime.fromisoformat(last).replace(tzinfo=timezone.utc)
+                    if (now_utc - ld).total_seconds() / 3600 < 23:
                         should_post = False
                 if should_post:
                     await db.set_state(gid, "last_activity_post", now_utc.isoformat())
@@ -1168,7 +1148,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v2.5.1"
+BOT_VERSION = "v2.6.0"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1288,6 +1268,43 @@ async def leaderboard_cmd(interaction: discord.Interaction):
 
 # ---------- Admin ----------
 
+@bot.tree.command(name="botstats", description="View bot performance and database metrics (debug)")
+@app_commands.default_permissions(administrator=True)
+async def botstats_cmd(interaction: discord.Interaction):
+    """Displays bot uptime and database performance metrics."""
+    await interaction.response.defer(ephemeral=True)
+    
+    # Calculate uptime
+    uptime_seconds = int(time.time() - BOT_START_TIME)
+    uptime_str = str(timedelta(seconds=uptime_seconds))
+    
+    # Get database metrics
+    db_stats = db.get_db_stats()
+    total_ops = db_stats["queries"] + db_stats["commits"] + db_stats["scripts"]
+    
+    # Simple rate calculation (ops per minute)
+    ops_per_min = (total_ops / (uptime_seconds / 60)) if uptime_seconds > 60 else total_ops
+
+    embed = discord.Embed(
+        title="🤖 Bot Performance Metrics",
+        color=discord.Color.blue(),
+        timestamp=datetime.now(timezone.utc)
+    )
+    
+    embed.add_field(name="Uptime", value=f"`{uptime_str}`", inline=True)
+    embed.add_field(name="Version", value=f"`{BOT_VERSION}`", inline=True)
+    
+    db_value = (
+        f"Queries: `{fmt_num(db_stats['queries'])}`\n"
+        f"Commits: `{fmt_num(db_stats['commits'])}`\n"
+        f"Scripts: `{fmt_num(db_stats['scripts'])}`\n"
+        f"Total Ops: `{fmt_num(total_ops)}`"
+    )
+    embed.add_field(name="Database Load", value=db_value, inline=False)
+    
+    embed.set_footer(text=f"Avg Load: {ops_per_min:.2f} ops/min")
+    
+    await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="chips", description="Set a user's chip balance (admin only)")
 @app_commands.default_permissions(administrator=True)
@@ -2824,90 +2841,38 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
             channel = bot.get_channel(payload.channel_id)
             if channel:
                 message = await channel.fetch_message(payload.message_id)
-                # Skip bot messages (polls, reaction roles, etc.)
-                if message.author.bot:
-                    pass  # Don't process bot messages for Hall of Fame
-                else:
-                    # Check if any single emoji has reached threshold
-                    qualifying_reaction = None
-                    for r in message.reactions:
-                        if r.count >= HOF_THRESHOLD:
-                            qualifying_reaction = r
-                            break
+                if not message.author.bot:
+                    qualifying_reaction = next((r for r in message.reactions if r.count >= HOF_THRESHOLD), None)
                     if qualifying_reaction:
-                        # Mark as forwarded to prevent duplicates
-                        _hall_of_fame_forwarded.add(payload.message_id)
-                        
+                        _hof_mark_forwarded(payload.message_id)
                         hof_channel = bot.get_channel(int(hof_channel_id))
                         if hof_channel:
-                            # Build the forward embed
                             embed = discord.Embed(
                                 description=message.content or "*[No text content]*",
                                 color=discord.Color.gold(),
                                 timestamp=message.created_at
                             )
-                            embed.set_author(
-                                name=message.author.display_name,
-                                icon_url=message.author.display_avatar.url if message.author.display_avatar else None
-                            )
-                            embed.add_field(
-                                name="Reactions",
-                                value=" ".join([f"{r.emoji} {r.count}" for r in message.reactions]),
-                                inline=False
-                            )
-                            embed.add_field(
-                                name="Source",
-                                value=f"[Jump to message]({message.jump_url})",
-                                inline=False
-                            )
-                            
-                            # Handle attachments
+                            embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
+                            embed.add_field(name="Reactions", value=" ".join([f"{r.emoji} {r.count}" for r in message.reactions]), inline=False)
+                            embed.add_field(name="Source", value=f"[Jump to message]({message.jump_url})", inline=False)
                             if message.attachments:
                                 embed.set_image(url=message.attachments[0].url)
-                            
                             await hof_channel.send(embed=embed)
-                            print(f"[HallOfFame] Forwarded message {payload.message_id}")
         except Exception as e:
             print(f"[HallOfFame] Error: {e}")
     
     # --- Reaction Role Picker (👍 only) ---
-    if str(payload.emoji) != "👍":
-        return
+    if str(payload.emoji) == "👍":
+        matched_feature = next((f for f in ["casual", "typology"] if str(payload.message_id) == HARDCODED.get(f"role_picker_message_{f}")), None)
+        if matched_feature:
+            role_id = HARDCODED.get(f"ping_role_{matched_feature}")
+            guild = bot.get_guild(payload.guild_id)
+            if guild:
+                member = guild.get_member(payload.user_id) or await guild.fetch_member(payload.user_id)
+                role = guild.get_role(int(role_id))
+                if role and member:
+                    await member.add_roles(role)
 
-    # Check all feature pickers using hardcoded message IDs
-    matched_feature = None
-    msg_id = str(payload.message_id)
-    for feature in ["casual", "typology"]:
-        if msg_id == HARDCODED.get(f"role_picker_message_{feature}"):
-            matched_feature = feature
-            break
-    
-    if not matched_feature:
-        return
-
-    role_id = HARDCODED.get(f"ping_role_{matched_feature}")
-    if not role_id:
-        return
-
-    guild = bot.get_guild(payload.guild_id)
-    if not guild:
-        return
-    member = guild.get_member(payload.user_id)
-    if not member:
-        try:
-            member = await guild.fetch_member(payload.user_id)
-        except Exception:
-            return
-
-    role = guild.get_role(int(role_id))
-    if not role:
-        return
-
-    try:
-        await member.add_roles(role)
-        print(f"[ReactionRole] ✅ Added {role.name} to {member.display_name}")
-    except Exception as e:
-        print(f"[ReactionRole] ❌ Failed to add role: {e}")
 
 
 @bot.event
@@ -2959,27 +2924,29 @@ async def on_message(message: discord.Message):
     gid = str(message.guild.id)
     uid = str(message.author.id)
 
-    # Track activity and chatter with error handling (don't let DB issues block message processing)
+    # 1. Consolidated Activity Tracking
     try:
-        await db.set_state(gid, "last_message_time", datetime.now(timezone.utc).isoformat())
-        await db.set_state(gid, "last_message_channel", str(message.channel.id))
-        
         now = datetime.now(timezone.utc)
+        now_iso = now.isoformat()
         last_msg_key = f"user_last_msg_{uid}"
-        last_msg_time = await db.get_state(gid, last_msg_key)
+        
+        # Batch read previous states
+        states = await db.get_states(gid, [last_msg_key])
+        prev_msg_time = states.get(last_msg_key)
         
         is_spam = False
-        if last_msg_time:
-            last_dt = datetime.fromisoformat(last_msg_time)
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
+        if prev_msg_time:
+            last_dt = datetime.fromisoformat(prev_msg_time).replace(tzinfo=timezone.utc)
             if (now - last_dt).total_seconds() < 3:
                 is_spam = True
         
-        # Update user's last message time
-        await db.set_state(gid, last_msg_key, now.isoformat())
+        # Batch write tracking updates
+        await db.set_states(gid, {
+            "last_message_time": now_iso,
+            "last_message_channel": str(message.channel.id),
+            last_msg_key: now_iso
+        })
         
-        # Only count for rewards if not spam
         if not is_spam:
             await db.increment_chatter(gid, uid, message.author.display_name)
             await db.increment_activity_message(gid, uid, message.author.display_name)
@@ -3274,35 +3241,12 @@ async def on_message(message: discord.Message):
     drop = await db.get_chip_drop(gid)
     if drop and str(message.channel.id) == drop["channel_id"]:
         content = message.content.strip()
-        claimed = False
-        
-        if drop["drop_type"] == "grab" and content.lower() == "~grab":
-            claimed = True
-        elif drop["drop_type"] == "math":
-            # Check if answer matches (strip whitespace and commas)
-            if content.replace(",", "") == drop["answer"]:
-                claimed = True
-        
-        if claimed:
-            amount = drop["amount"]
-            emoji = config.CHIPS["emoji"]
-            
-            await db.add_chips(gid, str(message.author.id), message.author.display_name, amount)
-            
-            # Reply to the winner's message
-            claimed_msg = random.choice(config.MESSAGES["chip_drop"]["claimed"]).format(
-                user=message.author.mention,
-                amount=fmt_num(amount),
-                emoji=emoji
-            )
-            try:
-                await message.reply(claimed_msg, mention_author=False)
-            except Exception:
-                pass
-            
-            # Delete the drop and set cooldown
+        if (drop["drop_type"] == "grab" and content.lower() == "~grab") or \
+           (drop["drop_type"] == "math" and content.replace(",", "") == drop["answer"]):
+            await db.add_chips(gid, uid, message.author.display_name, drop["amount"])
+            await message.reply(random.choice(config.MESSAGES["chip_drop"]["claimed"]).format(user=message.author.mention, amount=fmt_num(drop["amount"]), emoji=config.CHIPS["emoji"]), mention_author=False)
             await db.delete_chip_drop(gid)
-            await db.set_state(gid, "last_chip_drop_claimed", datetime.now(timezone.utc).isoformat())
+            await db.set_state(gid, "last_chip_drop_claimed", now_iso)
             
             # Set random cooldown for next drop
             cooldown_hours = random.uniform(
@@ -3315,44 +3259,24 @@ async def on_message(message: discord.Message):
     game = await db.get_word_game(gid)
     if game and game["active"] and str(message.channel.id) == game["channel_id"]:
         word = message.content.strip()
-        print(f"[WordGame] Message from {message.author}: '{word}'")
-
-        # Validate — single word/punctuation, not too long, no links/mentions
-        is_single_word = word and " " not in word and "\n" not in word
-        is_short = len(word) <= 45 if word else False
-        is_not_link = not word.startswith("http") if word else True
-        is_not_mention = not word.startswith("<") if word else True
-        is_word_chars = bool(re.match(r"^[\w''.,!?;:\-…\"\'\`]+$", word, re.UNICODE)) if word else False
-        
-        valid = is_single_word and is_short and is_not_link and is_not_mention and is_word_chars
-        print(f"[WordGame] Valid={valid} (single={is_single_word}, short={is_short}, notlink={is_not_link}, notmention={is_not_mention}, chars={is_word_chars})")
+        valid = word and " " not in word and "\n" not in word and len(word) <= 45 and \
+                not word.startswith("http") and not word.startswith("<") and \
+                bool(re.match(r"^[\w''.,!?;:\-…\"\'\`]+$", word, re.UNICODE))
 
         if valid:
-            if game["last_contributor_id"] == str(message.author.id):
-                try:
-                    await message.channel.send(
-                        f"{message.author.mention} You can't add two words in a row! Let someone else go.",
-                        delete_after=4,
-                    )
-                except Exception:
-                    pass
+            if game["last_contributor_id"] == uid:
+                await message.channel.send(f"{message.author.mention} You can't add two words in a row!", delete_after=4)
             else:
-                # Add the word
-                await db.add_word(gid, word, str(message.author.id))
-                await db.set_state(gid, "last_wordgame_activity", datetime.now(timezone.utc).isoformat())
-                game = await db.get_word_game(gid)
-
+                await db.add_word(gid, word, uid, game["words"])
+                await db.set_state(gid, "last_wordgame_activity", now_iso)
+                # Re-fetch only for visual update
+                updated_game = await db.get_word_game(gid)
                 try:
                     old_msg = await message.channel.fetch_message(int(game["message_id"]))
                     await old_msg.delete()
-                except Exception:
-                    pass
-
-                # Format and send new embed with End button
-                story = format_story(game["words"])
-                embed = build_word_game_embed(story, game["word_count"], True, message.author)
-                view = WordGameActiveView()
-                new_msg = await message.channel.send(embed=embed, view=view)
+                except Exception: pass
+                embed = build_word_game_embed(format_story(updated_game["words"]), updated_game["word_count"], True, message.author)
+                new_msg = await message.channel.send(embed=embed, view=WordGameActiveView())
                 await db.update_word_game_message(gid, str(new_msg.id))
 
     await bot.process_commands(message)
