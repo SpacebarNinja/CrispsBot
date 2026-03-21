@@ -448,9 +448,14 @@ async def post_casual(guild_id: str, ping: bool = True, channel: discord.TextCha
     if not channel:
         channel_id = HARDCODED["channel_casual"]
         channel = bot.get_channel(int(channel_id))
+        if not channel:
+            try:
+                channel = await bot.fetch_channel(int(channel_id))
+            except Exception:
+                print(f"[Casual] Could not find channel {channel_id}")
+                return False  # Signal failure so caller doesn't mark state
     if not channel:
-        print(f"[Casual] Could not find channel")
-        return
+        return False
 
     categories = ["fun", "poll"]
     if exclude_polls:
@@ -497,6 +502,7 @@ async def post_casual(guild_id: str, ping: bool = True, channel: discord.TextCha
     if selected_cat == "poll":
         await msg.add_reaction("✅")
         await msg.add_reaction("❌")
+    return True  # Signal success
 
 
 async def post_typology(guild_id: str, ping: bool = True, channel: discord.TextChannel = None):
@@ -504,9 +510,14 @@ async def post_typology(guild_id: str, ping: bool = True, channel: discord.TextC
     if not channel:
         channel_id = HARDCODED["channel_typology"]
         channel = bot.get_channel(int(channel_id))
+        if not channel:
+            try:
+                channel = await bot.fetch_channel(int(channel_id))
+            except Exception:
+                print(f"[Typology] Could not find channel {channel_id}")
+                return False  # Signal failure so caller doesn't mark state
     if not channel:
-        print(f"[Typology] Could not find channel")
-        return
+        return False
 
     categories = ["matchups", "hottakes", "who"]
     
@@ -575,6 +586,7 @@ async def post_typology(guild_id: str, ping: bool = True, channel: discord.TextC
             await msg.add_reaction(reaction)
         except Exception:
             pass
+    return True  # Signal success
 
 
 # Map question type → post function
@@ -855,25 +867,29 @@ async def schedule_loop():
         states = await db.get_states(gid, state_keys)
 
 
-        # --- Alternating Daily Question (12:00 PM Manila) ---
-        # Day 1: Casual, Day 2: Typology, Day 1: Casual, etc.
-        if now_manila.hour == 12 and now_manila.minute == 0:
+        # --- Alternating Daily Question ---
+        # Fires once per day at/after 12:00 PM Manila.
+        # Uses "past schedule time today" check so bot restarts don't miss the window.
+        question_sched_dt_manila = now_manila.replace(hour=12, minute=0, second=0, microsecond=0)
+        if now_manila >= question_sched_dt_manila:
             last_iso = states.get("last_daily_question")
             should_post = True
             if last_iso:
                 last_dt = datetime.fromisoformat(last_iso).replace(tzinfo=timezone.utc)
-                if (now_utc - last_dt).total_seconds() / 3600 < 23:
+                question_sched_dt_utc = question_sched_dt_manila.astimezone(timezone.utc)
+                if last_dt >= question_sched_dt_utc:  # Already posted since today's scheduled time
                     should_post = False
             
             if should_post:
-                await db.set_state(gid, "last_daily_question", now_utc.isoformat())
                 counter = int(states.get("daily_question_toggle") or "0")
                 try:
-                    if counter % 2 == 0: # Even = Casual
-                        await post_casual(gid)
-                    else: # Odd = Typology
-                        await post_typology(gid)
-                    await db.set_state(gid, "daily_question_toggle", str(counter + 1))
+                    if counter % 2 == 0:  # Even = Casual
+                        success = await post_casual(gid)
+                    else:  # Odd = Typology
+                        success = await post_typology(gid)
+                    if success:
+                        await db.set_state(gid, "last_daily_question", now_utc.isoformat())
+                        await db.set_state(gid, "daily_question_toggle", str(counter + 1))
                 except Exception as e:
                     print(f"Error posting daily question: {e}")
 
@@ -1172,7 +1188,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v2.7.0"
+BOT_VERSION = "v2.7.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
