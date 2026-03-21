@@ -733,7 +733,10 @@ async def do_chatter_rewards(guild_id: str):
         return
     channel = bot.get_channel(int(channel_id))
     if not channel:
-        return
+        try:
+            channel = await bot.fetch_channel(int(channel_id))
+        except Exception:
+            return  # Can't find channel — don't mark as posted, retry next opportunity
 
     # Reward YESTERDAY's chatters (since rewards fire in the morning)
     yesterday = (datetime.now(MANILA_TZ) - timedelta(days=1)).date().isoformat()
@@ -754,6 +757,7 @@ async def do_chatter_rewards(guild_id: str):
     if not chatters:
         await channel.send(config.MESSAGES["chatter_reward"]["no_activity"])
         await db.clear_daily_chatter(guild_id, yesterday)
+        await db.set_state(guild_id, "last_chatter_post", datetime.now(timezone.utc).isoformat())
         return
 
     lines = [config.MESSAGES["chatter_reward"]["announcement"]]
@@ -783,7 +787,10 @@ async def do_activity_rewards(guild_id: str):
         return
     channel = bot.get_channel(int(channel_id))
     if not channel:
-        return
+        try:
+            channel = await bot.fetch_channel(int(channel_id))
+        except Exception:
+            return  # Can't find channel — don't mark as posted, retry next opportunity
 
     # Reward YESTERDAY's activity (since rewards fire in the morning)
     yesterday = (datetime.now(MANILA_TZ) - timedelta(days=1)).date().isoformat()
@@ -804,6 +811,7 @@ async def do_activity_rewards(guild_id: str):
     if not top_activity:
         await channel.send(config.MESSAGES["activity_rewards"]["no_activity"])
         await db.clear_daily_activity(guild_id, yesterday)
+        await db.set_state(guild_id, "last_activity_post", datetime.now(timezone.utc).isoformat())
         return
 
     lines = [config.MESSAGES["activity_rewards"]["announcement"]]
@@ -869,17 +877,20 @@ async def schedule_loop():
                 except Exception as e:
                     print(f"Error posting daily question: {e}")
 
-        # --- Chatter Rewards (fixed Manila time) ---
+        # --- Chatter Rewards ---
+        # Fires once per day at/after CHATTER_SCHEDULE time (Manila).
+        # Uses "past schedule time today" check so bot restarts don't miss the window.
         sched = config.CHATTER_SCHEDULE
-        if now_manila.hour == sched["hour"] and now_manila.minute == sched["minute"]:
+        sched_dt_manila = now_manila.replace(hour=sched["hour"], minute=sched["minute"], second=0, microsecond=0)
+        if now_manila >= sched_dt_manila:
             last = states.get("last_chatter_post")
             should_post = True
             if last:
-                ld = datetime.fromisoformat(last).replace(tzinfo=timezone.utc)
-                if (now_utc - ld).total_seconds() / 3600 < 23: # Period within last 23 hours = Skip
+                last_dt = datetime.fromisoformat(last).replace(tzinfo=timezone.utc)
+                sched_dt_utc = sched_dt_manila.astimezone(timezone.utc)
+                if last_dt >= sched_dt_utc:  # Already posted since today's scheduled time
                     should_post = False
             if should_post:
-                await db.set_state(gid, "last_chatter_post", now_utc.isoformat())
                 try:
                     await do_chatter_rewards(gid)
                 except Exception as e:
@@ -887,16 +898,17 @@ async def schedule_loop():
 
         # --- Activity Rewards ---
         act_sched = config.ACTIVITY_REWARDS
-        if now_manila.hour == act_sched["hour"] and now_manila.minute == act_sched["minute"]:
+        act_sched_dt_manila = now_manila.replace(hour=act_sched["hour"], minute=act_sched["minute"], second=0, microsecond=0)
+        if now_manila >= act_sched_dt_manila:
             if config.FEATURES.get("activity_rewards"):
                 last = states.get("last_activity_post")
                 should_post = True
                 if last:
-                    ld = datetime.fromisoformat(last).replace(tzinfo=timezone.utc)
-                    if (now_utc - ld).total_seconds() / 3600 < 23:
+                    last_dt = datetime.fromisoformat(last).replace(tzinfo=timezone.utc)
+                    act_sched_dt_utc = act_sched_dt_manila.astimezone(timezone.utc)
+                    if last_dt >= act_sched_dt_utc:
                         should_post = False
                 if should_post:
-                    await db.set_state(gid, "last_activity_post", now_utc.isoformat())
                     try:
                         await do_activity_rewards(gid)
                     except Exception as e:
@@ -1160,7 +1172,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v2.6.2"
+BOT_VERSION = "v2.7.0"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
