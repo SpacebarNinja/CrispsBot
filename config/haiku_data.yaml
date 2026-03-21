@@ -1136,7 +1136,7 @@ syllable_overrides:
   discover: 3
   direction: 3
   everyone: 3
-  everything: 4
+  everything: 3
   everywhere: 3
   example: 3
   family: 3
@@ -1271,7 +1271,7 @@ syllable_overrides:
   decide: 2
   provide: 2
   divide: 2
-  opposites: 4
+  opposites: 3
   opposite: 3
   extremely: 3
   completely: 3
