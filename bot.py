@@ -84,6 +84,18 @@ def count_syllables(word: str) -> int | None:
     if not word or not any(c.isalpha() for c in word):
         return 0
     
+    # Handle hyphenated words by splitting and summing
+    if '-' in word:
+        parts = [p for p in word.split('-') if p]
+        if len(parts) > 1:
+            total = 0
+            for part in parts:
+                part_count = count_syllables(part)
+                if part_count is None:
+                    return None
+                total += part_count
+            return total
+    
     # Remove non-alpha characters for counting
     clean = ''.join(c for c in word if c.isalpha())
     
@@ -1148,7 +1160,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v2.6.0"
+BOT_VERSION = "v2.6.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
