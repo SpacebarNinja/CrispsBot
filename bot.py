@@ -1188,7 +1188,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v2.7.2"
+BOT_VERSION = "v2.8.0"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -2872,9 +2872,9 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     if payload.user_id == bot.user.id:
         return
     
-    # --- Hall of Fame: forward messages with 4+ reactions of the SAME emoji ---
-    # Only for messages from real users (not bots)
-    HOF_THRESHOLD = 4
+    # --- Hall of Fame ---
+    # Qualifies if: 6+ unique people reacted (any emoji), OR anyone reacted with ⭐
+    HOF_UNIQUE_THRESHOLD = 6
     hof_channel_id = HARDCODED.get("channel_hall_of_fame")
     if hof_channel_id and payload.message_id not in _hall_of_fame_forwarded:
         try:
@@ -2882,8 +2882,24 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
             if channel:
                 message = await channel.fetch_message(payload.message_id)
                 if not message.author.bot:
-                    qualifying_reaction = next((r for r in message.reactions if r.count >= HOF_THRESHOLD), None)
-                    if qualifying_reaction:
+                    qualifies = False
+                    
+                    # Check for instant-qualify ⭐ reaction
+                    star_reaction = next((r for r in message.reactions if str(r.emoji) == "⭐"), None)
+                    if star_reaction and star_reaction.count >= 1:
+                        qualifies = True
+                    
+                    # Otherwise, count unique reactors across all emojis
+                    if not qualifies:
+                        unique_reactors = set()
+                        for r in message.reactions:
+                            async for user in r.users():
+                                if not user.bot and user.id != message.author.id:
+                                    unique_reactors.add(user.id)
+                        if len(unique_reactors) >= HOF_UNIQUE_THRESHOLD:
+                            qualifies = True
+                    
+                    if qualifies:
                         _hof_mark_forwarded(payload.message_id)
                         hof_channel = bot.get_channel(int(hof_channel_id))
                         if hof_channel:
