@@ -1188,7 +1188,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v2.7.1"
+BOT_VERSION = "v2.7.2"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -2993,13 +2993,13 @@ async def on_message(message: discord.Message):
     except Exception as e:
         print(f"[on_message] DB error tracking activity: {e}")
 
-    # --- Haiku Detection ---
-    is_haiku, haiku_lines = check_haiku(message.content)
-    if is_haiku:
-        haiku_reply = "Nice haiku bro:\n"
-        syllable_pattern = [5, 7, 5]
-        haiku_reply += "\n".join([f"> *{line}* ({syllable_pattern[i]})" for i, line in enumerate(haiku_lines)])
-        await message.reply(haiku_reply, mention_author=False)
+    # --- Haiku Detection (DISABLED) ---
+    # is_haiku, haiku_lines = check_haiku(message.content)
+    # if is_haiku:
+    #     haiku_reply = "Nice haiku bro:\n"
+    #     syllable_pattern = [5, 7, 5]
+    #     haiku_reply += "\n".join([f"> *{line}* ({syllable_pattern[i]})" for i, line in enumerate(haiku_lines)])
+    #     await message.reply(haiku_reply, mention_author=False)
 
     # --- !typology or !t command to create typology cards ---
     content_lower = message.content.lower().strip()
