@@ -22,6 +22,7 @@ import time
 from dotenv import load_dotenv
 import config
 import db
+import april_fools
 
 # ======================== SETUP ========================
 
@@ -742,17 +743,20 @@ async def check_code_purple(guild_id: str):
 async def do_chatter_rewards(guild_id: str):
     channel_id = HARDCODED["channel_chatter_rewards"]
     if not channel_id:
+        print(f"[ChatterRewards] No channel_chatter_rewards configured")
         return
     channel = bot.get_channel(int(channel_id))
     if not channel:
         try:
             channel = await bot.fetch_channel(int(channel_id))
-        except Exception:
+        except Exception as e:
+            print(f"[ChatterRewards] Cannot find channel {channel_id}: {e}")
             return  # Can't find channel — don't mark as posted, retry next opportunity
 
     # Reward YESTERDAY's chatters (since rewards fire in the morning)
     yesterday = (datetime.now(MANILA_TZ) - timedelta(days=1)).date().isoformat()
     chatters = await db.get_top_chatters(guild_id, yesterday)
+    print(f"[ChatterRewards] Found {len(chatters)} chatters for {yesterday}")
     emoji = config.CHIPS["emoji"]
     
     rewards = [
@@ -907,10 +911,12 @@ async def schedule_loop():
                 if last_dt >= sched_dt_utc:  # Already posted since today's scheduled time
                     should_post = False
             if should_post:
+                print(f"[ChatterRewards] Attempting to post for guild {gid} (last={last})")
                 try:
                     await do_chatter_rewards(gid)
+                    print(f"[ChatterRewards] Successfully completed for guild {gid}")
                 except Exception as e:
-                    print(f"Error doing chatter rewards: {e}")
+                    print(f"[ChatterRewards] Error: {e}")
 
         # --- Activity Rewards ---
         act_sched = config.ACTIVITY_REWARDS
@@ -1188,12 +1194,69 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v2.8.0"
+BOT_VERSION = "v3.0"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
 async def version_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(f"Bot version: **{BOT_VERSION}**", ephemeral=True)
+
+
+@bot.tree.command(name="debug_chatter", description="Debug chatter rewards state (admin)")
+@app_commands.default_permissions(administrator=True)
+async def debug_chatter_cmd(interaction: discord.Interaction):
+    """Check why chatter rewards might not be working."""
+    await interaction.response.defer(ephemeral=True)
+    gid = str(interaction.guild_id)
+    
+    # Get current state
+    states = await db.get_states(gid, ["last_chatter_post"])
+    last = states.get("last_chatter_post")
+    
+    # Check channel
+    channel_id = HARDCODED.get("channel_chatter_rewards")
+    channel_status = "❌ Not configured"
+    if channel_id:
+        channel = bot.get_channel(int(channel_id))
+        if channel:
+            channel_status = f"✅ #{channel.name} (cached)"
+        else:
+            try:
+                channel = await bot.fetch_channel(int(channel_id))
+                channel_status = f"✅ #{channel.name} (fetched)"
+            except Exception as e:
+                channel_status = f"❌ Cannot access: {e}"
+    
+    # Check yesterday's chatters
+    yesterday = (datetime.now(MANILA_TZ) - timedelta(days=1)).date().isoformat()
+    chatters = await db.get_top_chatters(gid, yesterday)
+    
+    # Calculate should_post
+    now_manila = datetime.now(MANILA_TZ)
+    sched = config.CHATTER_SCHEDULE
+    sched_dt_manila = now_manila.replace(hour=sched["hour"], minute=sched["minute"], second=0, microsecond=0)
+    should_post = "❓ Unknown"
+    if now_manila >= sched_dt_manila:
+        if last:
+            last_dt = datetime.fromisoformat(last).replace(tzinfo=timezone.utc)
+            sched_dt_utc = sched_dt_manila.astimezone(timezone.utc)
+            should_post = "❌ Already posted today" if last_dt >= sched_dt_utc else "✅ Should post"
+        else:
+            should_post = "✅ Should post (never posted)"
+    else:
+        should_post = f"⏳ Before schedule ({sched['hour']}:{sched['minute']:02d})"
+    
+    lines = [
+        f"**Channel:** {channel_status}",
+        f"**Channel ID:** `{channel_id or 'None'}`",
+        f"**Last Post:** `{last or 'Never'}`",
+        f"**Status:** {should_post}",
+        f"**Yesterday ({yesterday}):** {len(chatters)} chatters",
+        f"**Schedule:** {sched['hour']}:{sched['minute']:02d} Manila",
+        f"**Current Time:** {now_manila.strftime('%H:%M')} Manila",
+    ]
+    
+    await interaction.followup.send("\n".join(lines))
 
 
 @bot.tree.command(name="balance", description="Check your chip balance 🥔")
@@ -3008,6 +3071,13 @@ async def on_message(message: discord.Message):
             await db.increment_activity_message(gid, uid, message.author.display_name)
     except Exception as e:
         print(f"[on_message] DB error tracking activity: {e}")
+
+    # --- April Fools 2026 ---
+    try:
+        if await april_fools.process_message(message, bot):
+            return  # Original message deleted & re-sent via webhook
+    except Exception as e:
+        print(f"[AprilFools] Error: {e}")
 
     # --- Haiku Detection (DISABLED) ---
     # is_haiku, haiku_lines = check_haiku(message.content)
