@@ -41,10 +41,12 @@ FOLLOW_UPS = [
     " \**cutely flusters and blushes as I turn my head towards your direction\**",
     "... and that's so skibidi!", " pwease pet meee...", " \**purrs\**",
     " \**puts on a fake smile\**", " \**sniff, sniff\**",
-    ", oh and i haven't showered yet", ", frfr nocap", ", NOT!", " \**sweats nervously\**", "\**sigh*\* okay yeah whatever",
+    ", oh and i haven't showered yet", ", frfr nocap", ", NOT!", " \**sweats nervously\**", "\**sigh*\* okay yeah whatever", " \**tries to look intimidating but fails miserably\**",
 ]
 
 BOT_WORD_REPLIES = [
+    "Well~ about that~",
+    "Be ready... for more...",
     ">:(",
     "Excuse me?",
     "I have feelings, y'know?",
@@ -52,18 +54,40 @@ BOT_WORD_REPLIES = [
     "April.. it's kinda first...",
     "...don't listen to them.. i'm just a random bot...",
     ":3 *cutely winks at you*",
-    "SORRY FOR DOING MY JOB, JEEZ",
+    "Sorry for doing my job~",
+    "I may be a bot, but at least I'm not a clown like you.",
     "hehe~ x3",
     "Embrace it. Deal with it.",
+    "My next plan is about to be set in motion...",
+    ":)"
 ]
+
+SWEAR_REPLIES = [
+    "H-hey! Language! 3:<",
+    "Excuse me?! This is a family server!",
+    "Did your mother teach you to talk like that?!",
+    "Uh... this is a Wendy's.",
+    "Uhh... sure... whatever you say...",
+    "bro what 😭😭😭",
+    "i-i'm telling mom!",
+    "that's a naughty word! >:(",
+    "Shiver my tims...",
+    "I may be a bot, but I still have standards, you know.",
+]
+
+SWEAR_PATTERN = re.compile(
+    r'\b(?:fuck|shit|ass|bitch|bastard|damn|crap|piss|cock|dick|pussy|cunt|whore|slut|fag|retard|hell)\b',
+    re.IGNORECASE,
+)
 
 REPLY_TO_BOT_RESPONSES = [
     "no u",
     "I see. And since when were you in charge?",
-    "...You are my playthings, and I get joy out of making you SUFFER. "
-    "I'm the one who causes pain for FUN! If I led you on, it was just "
-    "to make this part hurt you more.",
-    "i'm running out of things to say tbh.",
+    "...You are my playthings, and I get joy out of making you SUFFER. I'm the one who causes pain for FUN! If I led you on, it was just to make this part hurt you more.",
+    "Hmph.",
+    "I could say something profound, but why would I waste my brilliance on you?",
+    "Never gonna give you up, never gonna let you down, never gonna run around and desert you...",
+    "I am a bot, and thus I am perfect and infallible. Your attempts to engage with me only highlight your own inadequacies.",
 ]
 
 USER_TYPOLOGY = {
@@ -163,6 +187,20 @@ def transform_text(content: str) -> str:
     if random.random() < 0.5:
         content = _swap_yes_no(content)
 
+    # 100% bro → bruv
+    content = re.sub(
+        r'\bbro\b',
+        lambda m: _match_case(m.group(), "bruv"),
+        content, flags=re.IGNORECASE,
+    )
+
+    # 100% hell → heaven (standalone, not part of "hell no" since that's already swapped)
+    content = re.sub(
+        r'\bhell\b',
+        lambda m: _match_case(m.group(), "heaven"),
+        content, flags=re.IGNORECASE,
+    )
+
     return content
 
 
@@ -224,6 +262,8 @@ def _pick_random_reply(user_id: str, word_count: int) -> str:
         "brother amigo pal buddy friend chummy chum chum pal...",
         "wait, sorry for interrupting... *farts*, ok continue",
         "ya sure?",
+        "that's... interesting.",
+        "well.. that says a lot about you as a person.",
     ]
     if word_count > 15:
         pool.append(random.choice(["amazing yap!", "what is bro on about"]))
@@ -350,12 +390,20 @@ async def process_message(message: discord.Message, bot) -> bool:
     if on_cooldown:
         return deleted
 
-    # ---- 5 % star reaction ----
-    if random.random() < 0.05:
+    # ---- 2 % star reaction ----
+    if random.random() < 0.02:
         await _safe_react(target, message.channel, "⭐")
 
     # Only one reply effect per message to avoid stacking API calls
     replied = False
+
+    # ---- Swear word → reply ----
+    if not replied and SWEAR_PATTERN.search(original):
+        await asyncio.sleep(1)
+        await _safe_reply(
+            target, message.channel, random.choice(SWEAR_REPLIES),
+        )
+        replied = True
 
     # ---- "bot" exact word → 50 % reply (checked first) ----
     if not replied and re.search(r'\bbot\b', original, re.IGNORECASE):
