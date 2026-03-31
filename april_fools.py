@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 # ======================== CONFIG ========================
 
 APRIL_FOOLS_MODE = True
-DEBUG_ONLY = True  # When True, restrict effects to DEBUG_CHANNEL only
+DEBUG_ONLY = False  # When True, restrict effects to DEBUG_CHANNEL only
 DEBUG_CHANNEL = "1488643000434425967"
 BLACKLISTED_CHANNELS = {"1477516700802093188", "1446599844129931324"}
 
