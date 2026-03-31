@@ -3,8 +3,10 @@ April Fools 2026 — Chaos mode for CrispBot.
 Active until April 2 8:00 AM Manila time.
 """
 
+import asyncio
 import random
 import re
+import time
 import discord
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -13,9 +15,12 @@ from zoneinfo import ZoneInfo
 # ======================== CONFIG ========================
 
 APRIL_FOOLS_MODE = True
-DEBUG_ONLY = False  # When True, restrict effects to DEBUG_CHANNEL only
+DEBUG_ONLY = True  # When True, restrict effects to DEBUG_CHANNEL only
 DEBUG_CHANNEL = "1488643000434425967"
 BLACKLISTED_CHANNELS = {"1477516700802093188", "1446599844129931324"}
+
+# Rate-limiting: at most 1 "heavy" effect (webhook/reply) per channel per N seconds
+COOLDOWN_SECONDS = 4
 
 MANILA_TZ = ZoneInfo("Asia/Manila")
 CUTOFF = datetime(2026, 4, 2, 4, 0, tzinfo=MANILA_TZ)
@@ -83,6 +88,7 @@ ALL_MBTI = [
 # ======================== STATE ========================
 
 _webhook_cache: dict[int, discord.Webhook] = {}
+_channel_cooldowns: dict[int, float] = {}  # channel_id -> last heavy-effect timestamp
 
 
 # ======================== CHECKS ========================
@@ -103,6 +109,16 @@ def _channel_allowed(channel_id: str) -> bool:
         return False
     if DEBUG_ONLY:
         return channel_id == DEBUG_CHANNEL
+    return True
+
+
+def _check_cooldown(channel_id: int) -> bool:
+    """Return True if this channel is off cooldown (OK to do heavy effects)."""
+    now = time.monotonic()
+    last = _channel_cooldowns.get(channel_id, 0.0)
+    if now - last < COOLDOWN_SECONDS:
+        return False
+    _channel_cooldowns[channel_id] = now
     return True
 
 
@@ -268,6 +284,10 @@ async def process_message(message: discord.Message, bot) -> bool:
 
     user_id = str(message.author.id)
     original = message.content
+
+    # Rate-limit heavy effects per channel
+    on_cooldown = not _check_cooldown(message.channel.id)
+
     modified = transform_text(original)
 
     # 25 % random follow-up appended
@@ -275,13 +295,13 @@ async def process_message(message: discord.Message, bot) -> bool:
         modified += random.choice(FOLLOW_UPS)
 
     # 10 % identity theft — show message as someone else
-    identity_theft = random.random() < 0.10
+    identity_theft = not on_cooldown and random.random() < 0.10
 
     # ---- Webhook re-send (if content changed or identity theft) ----
     deleted = False
     target = message  # the message to react to / reply to later
 
-    if modified != original or identity_theft:
+    if (modified != original or identity_theft) and not on_cooldown:
         try:
             webhook = await _get_webhook(message.channel)
 
@@ -326,25 +346,28 @@ async def process_message(message: discord.Message, bot) -> bool:
         except (discord.Forbidden, discord.HTTPException) as e:
             print(f"[AprilFools] Webhook re-send failed: {e}")
 
+    # Skip additional API-heavy effects if on cooldown
+    if on_cooldown:
+        return deleted
+
     # ---- 5 % star reaction ----
     if random.random() < 0.05:
         await _safe_react(target, message.channel, "⭐")
 
-    # ---- 30 % random reply ----
-    if random.random() < 0.30:
-        word_count = len(original.split())
-        reply_text = _pick_random_reply(user_id, word_count)
-        await _safe_reply(target, message.channel, reply_text)
+    # Only one reply effect per message to avoid stacking API calls
+    replied = False
 
-    # ---- "bot" exact word → 50 % reply ----
-    if re.search(r'\bbot\b', original, re.IGNORECASE):
+    # ---- "bot" exact word → 50 % reply (checked first) ----
+    if not replied and re.search(r'\bbot\b', original, re.IGNORECASE):
         if random.random() < 0.50:
+            await asyncio.sleep(1)
             await _safe_reply(
                 target, message.channel, random.choice(BOT_WORD_REPLIES),
             )
+            replied = True
 
     # ---- Reply to a bot message → 50 % reply back ----
-    if message.reference and message.reference.message_id:
+    if not replied and message.reference and message.reference.message_id:
         try:
             ref = message.reference.resolved
             if ref is None:
@@ -353,12 +376,21 @@ async def process_message(message: discord.Message, bot) -> bool:
                 )
             if ref and ref.author.id == bot.user.id:
                 if random.random() < 0.50:
+                    await asyncio.sleep(1)
                     await _safe_reply(
                         target,
                         message.channel,
                         random.choice(REPLY_TO_BOT_RESPONSES),
                     )
+                    replied = True
         except Exception:
             pass
+
+    # ---- 30 % random reply ----
+    if not replied and random.random() < 0.30:
+        word_count = len(original.split())
+        reply_text = _pick_random_reply(user_id, word_count)
+        await asyncio.sleep(1)
+        await _safe_reply(target, message.channel, reply_text)
 
     return deleted
