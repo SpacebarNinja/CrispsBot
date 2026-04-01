@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 APRIL_FOOLS_MODE = True
 DEBUG_ONLY = False  # When True, restrict effects to DEBUG_CHANNEL only
 DEBUG_CHANNEL = "1488643000434425967"
-BLACKLISTED_CHANNELS = {"1477516700802093188", "1446599844129931324"}
+BLACKLISTED_CHANNELS = {"1477516700802093188", "1446599844129931324", "1470287259054903511"}
 
 # Rate-limiting: at most 1 "heavy" effect (webhook/reply) per channel per N seconds
 COOLDOWN_SECONDS = 4
@@ -334,31 +334,16 @@ async def process_message(message: discord.Message, bot) -> bool:
     if random.random() < 0.25:
         modified += random.choice(FOLLOW_UPS)
 
-    # 10 % identity theft — show message as someone else
-    identity_theft = not on_cooldown and random.random() < 0.10
-
-    # ---- Webhook re-send (if content changed or identity theft) ----
+    # ---- Webhook re-send (if content changed) ----
     deleted = False
     target = message  # the message to react to / reply to later
 
-    if (modified != original or identity_theft) and not on_cooldown:
+    if modified != original and not on_cooldown:
         try:
             webhook = await _get_webhook(message.channel)
 
-            if identity_theft:
-                pool = [m for m in message.guild.members
-                        if not m.bot and m.id != message.author.id]
-                if pool:
-                    victim = random.choice(pool)
-                    name = victim.display_name
-                    avatar = victim.display_avatar.url
-                else:
-                    # Fallback: keep original author
-                    name = message.author.display_name
-                    avatar = message.author.display_avatar.url
-            else:
-                name = message.author.display_name
-                avatar = message.author.display_avatar.url
+            name = message.author.display_name
+            avatar = message.author.display_avatar.url
 
             # Preserve attachments
             files = []
