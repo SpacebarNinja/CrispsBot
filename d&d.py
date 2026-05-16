@@ -362,44 +362,78 @@ async def _get_char_webhook(channel: discord.TextChannel, char_key: str) -> disc
     return wh
 
 
-async def _get_dm_webhook(channel: discord.TextChannel) -> discord.Webhook:
-    """Return (or create) the Dungeon Master webhook (no fixed avatar - set per message)."""
+async def _get_dm_webhook(
+    channel: discord.TextChannel,
+    member:  discord.Member = None,
+) -> discord.Webhook:
+    """Return (or create) a Dungeon Master webhook, baking the member's avatar in at creation."""
     cache_key = f"{channel.id}:dm"
+
+    # Helper: read avatar bytes (None if unavailable)
+    async def _avatar_bytes():
+        if member is None:
+            return None
+        try:
+            return await member.display_avatar.read()
+        except Exception:
+            return None
+
     if cache_key in _webhook_cache:
-        return _webhook_cache[cache_key]
+        cached = _webhook_cache[cache_key]
+        # Refresh avatar each time we have fresh member data
+        if member:
+            try:
+                await cached.edit(avatar=await _avatar_bytes())
+            except Exception:
+                pass
+        return cached
 
     for wh in await channel.webhooks():
         if wh.name == "DnD_DungeonMaster":
+            if member:
+                try:
+                    await wh.edit(avatar=await _avatar_bytes())
+                except Exception:
+                    pass
             _webhook_cache[cache_key] = wh
             return wh
 
-    wh = await channel.create_webhook(name="DnD_DungeonMaster")
+    wh = await channel.create_webhook(name="DnD_DungeonMaster", avatar=await _avatar_bytes())
     _webhook_cache[cache_key] = wh
     return wh
 
 
-async def _send_as_char(channel: discord.TextChannel, char_key: str, content: str) -> None:
+async def _send_as_char(
+    channel: discord.abc.Messageable,
+    char_key: str,
+    content: str,
+) -> None:
+    """Send as a character. Works in both TextChannels and Threads."""
     char = CHARACTERS[char_key]
-    wh   = await _get_char_webhook(channel, char_key)
-    await wh.send(
-        content,
-        username=char["name"],
-        allowed_mentions=discord.AllowedMentions.none(),
-    )
+    wh_channel = channel.parent if isinstance(channel, discord.Thread) else channel
+    if not isinstance(wh_channel, discord.TextChannel):
+        return
+    wh = await _get_char_webhook(wh_channel, char_key)
+    send_kw = dict(username=char["name"], allowed_mentions=discord.AllowedMentions.none())
+    if isinstance(channel, discord.Thread):
+        send_kw["thread"] = channel
+    await wh.send(content, **send_kw)
 
 
 async def _send_as_dm(
-    channel: discord.TextChannel,
+    channel: discord.abc.Messageable,
     member:  discord.Member,
     content: str,
 ) -> None:
-    wh = await _get_dm_webhook(channel)
-    await wh.send(
-        content,
-        username="Dungeon Master",
-        avatar_url=str(member.display_avatar.url),
-        allowed_mentions=discord.AllowedMentions.none(),
-    )
+    """Send as Dungeon Master. Works in both TextChannels and Threads."""
+    wh_channel = channel.parent if isinstance(channel, discord.Thread) else channel
+    if not isinstance(wh_channel, discord.TextChannel):
+        return
+    wh = await _get_dm_webhook(wh_channel, member)  # avatar is baked in
+    send_kw = dict(username="Dungeon Master", allowed_mentions=discord.AllowedMentions.none())
+    if isinstance(channel, discord.Thread):
+        send_kw["thread"] = channel
+    await wh.send(content, **send_kw)
 
 # ======================== MODALS ========================
 
@@ -569,7 +603,7 @@ class CombatSavesSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         choice  = self.values[0]
         channel = interaction.channel
-        if not isinstance(channel, discord.TextChannel):
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
             await interaction.response.send_message("❌ Can't roll here.", ephemeral=True)
             return
 
@@ -605,7 +639,7 @@ class ChecksDiceSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         choice  = self.values[0]
         channel = interaction.channel
-        if not isinstance(channel, discord.TextChannel):
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
             await interaction.response.send_message("❌ Can't roll here.", ephemeral=True)
             return
 
@@ -652,7 +686,7 @@ async def process_quote(message: discord.Message) -> bool:
         return False
     if not message.content.startswith(_QUOTE_STARTERS):
         return False
-    if not isinstance(message.channel, discord.TextChannel):
+    if not isinstance(message.channel, (discord.TextChannel, discord.Thread)):
         return False
 
     uid   = str(message.author.id)
@@ -662,11 +696,12 @@ async def process_quote(message: discord.Message) -> bool:
         return False
 
     try:
-        await message.delete()
+        # Send FIRST (feels instant), then delete — mirrors April Fools behaviour
         if is_dm:
             await _send_as_dm(message.channel, message.author, message.content)
         else:
             await _send_as_char(message.channel, PLAYER_CHARS[uid], message.content)
+        await message.delete()
         return True
     except (discord.Forbidden, discord.HTTPException) as e:
         print(f"[DnD] Quote webhook error: {e}")

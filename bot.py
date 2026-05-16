@@ -2929,10 +2929,20 @@ async def on_ready():
         bot.add_view(WordGameStartView())
         bot.add_view(NewQuestionView("casual"))
         bot.add_view(NewQuestionView("typology"))
-        dnd.setup(bot)
+        try:
+            dnd.setup(bot)
+            print("[DnD] Roll system loaded.")
+        except Exception as e:
+            print(f"[DnD] Setup failed: {e}")
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
+        # Also sync to each guild for instant slash-command visibility (global takes ~1h)
+        for _guild in bot.guilds:
+            try:
+                await bot.tree.sync(guild=_guild)
+            except Exception as _e:
+                print(f"[Tree] Guild sync failed for {_guild.name}: {_e}")
         print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. ({BOT_VERSION})")
 
 
