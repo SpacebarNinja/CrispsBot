@@ -1200,7 +1200,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.0.0"
+BOT_VERSION = "v4.1.0"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
