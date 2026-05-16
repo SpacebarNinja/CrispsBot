@@ -20,9 +20,15 @@ from collections import deque
 import time
 
 from dotenv import load_dotenv
+import importlib.util
 import config
 import db
 import april_fools
+
+# Load d&d.py (& in filename prevents normal import)
+_dnd_spec   = importlib.util.spec_from_file_location("dnd", Path(__file__).parent / "d&d.py")
+dnd         = importlib.util.module_from_spec(_dnd_spec)
+_dnd_spec.loader.exec_module(dnd)
 
 # ======================== SETUP ========================
 
@@ -1194,7 +1200,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v3.1.5"
+BOT_VERSION = "v4.0.0"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -2923,6 +2929,7 @@ async def on_ready():
         bot.add_view(WordGameStartView())
         bot.add_view(NewQuestionView("casual"))
         bot.add_view(NewQuestionView("typology"))
+        dnd.setup(bot)
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
@@ -3071,6 +3078,13 @@ async def on_message(message: discord.Message):
             await db.increment_activity_message(gid, uid, message.author.display_name)
     except Exception as e:
         print(f"[on_message] DB error tracking activity: {e}")
+
+    # --- D&D quote auto-sudo ---
+    try:
+        if await dnd.process_quote(message):
+            return  # Original message deleted & re-sent via character webhook
+    except Exception as e:
+        print(f"[DnD] Error: {e}")
 
     # --- April Fools 2026 ---
     try:
