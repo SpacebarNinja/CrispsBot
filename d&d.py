@@ -362,37 +362,16 @@ async def _get_char_webhook(channel: discord.TextChannel, char_key: str) -> disc
     return wh
 
 
-async def _get_dm_webhook(
-    channel: discord.TextChannel,
-    member:  discord.Member = None,
-) -> discord.Webhook:
-    """Return (or create) a Dungeon Master webhook. Avatar is set once at creation/first-fix."""
+async def _get_dm_webhook(channel: discord.TextChannel) -> discord.Webhook:
+    """Return (or create) a Dungeon Master webhook. No avatar stored — passed as URL at send time."""
     cache_key = f"{channel.id}:dm"
-
-    # Fast path: already cached this session — return immediately
     if cache_key in _webhook_cache:
         return _webhook_cache[cache_key]
-
     for wh in await channel.webhooks():
         if wh.name == "DnD_DungeonMaster":
-            # One-time fix: if webhook has no avatar yet, set it now
-            if wh.avatar is None and member:
-                try:
-                    ab = await member.display_avatar.read()
-                    wh = await wh.edit(avatar=ab)
-                except Exception:
-                    pass
             _webhook_cache[cache_key] = wh
             return wh
-
-    # Create fresh webhook with avatar baked in
-    avatar_bytes = None
-    if member:
-        try:
-            avatar_bytes = await member.display_avatar.read()
-        except Exception:
-            pass
-    wh = await channel.create_webhook(name="DnD_DungeonMaster", avatar=avatar_bytes)
+    wh = await channel.create_webhook(name="DnD_DungeonMaster")
     _webhook_cache[cache_key] = wh
     return wh
 
@@ -423,8 +402,12 @@ async def _send_as_dm(
     wh_channel = channel.parent if isinstance(channel, discord.Thread) else channel
     if not isinstance(wh_channel, discord.TextChannel):
         return
-    wh = await _get_dm_webhook(wh_channel, member)  # avatar is baked in
-    send_kw = dict(username="Dungeon Master", allowed_mentions=discord.AllowedMentions.none())
+    wh = await _get_dm_webhook(wh_channel)
+    send_kw = dict(
+        username="Dungeon Master",
+        avatar_url=member.display_avatar.url,  # URL string — no download, always current
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
     if isinstance(channel, discord.Thread):
         send_kw["thread"] = channel
     await wh.send(content, **send_kw)

@@ -1200,7 +1200,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.1.1"
+BOT_VERSION = "v4.1.2"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -2951,9 +2951,10 @@ async def on_ready():
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()
-        # Also sync to each guild for instant slash-command visibility (global takes ~1h)
+        # Copy global commands into each guild tree first, then sync for instant visibility
         for _guild in bot.guilds:
             try:
+                bot.tree.copy_global_to(guild=_guild)
                 await bot.tree.sync(guild=_guild)
             except Exception as _e:
                 print(f"[Tree] Guild sync failed for {_guild.name}: {_e}")
