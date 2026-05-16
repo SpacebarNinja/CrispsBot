@@ -1200,12 +1200,31 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.1.0"
+BOT_VERSION = "v4.1.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
 async def version_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(f"Bot version: **{BOT_VERSION}**", ephemeral=True)
+
+
+@bot.tree.command(name="roll", description="Roll dice as your D&D character 🎲")
+async def roll_cmd(interaction: discord.Interaction):
+    uid      = str(interaction.user.id)
+    char_key = dnd.PLAYER_CHARS.get(uid)
+    if not char_key:
+        await interaction.response.send_message(
+            "❌ You don't have a character assigned - ask the DM!",
+            ephemeral=True,
+        )
+        return
+    char = dnd.CHARACTERS[char_key]
+    view = dnd.RollView(char_key, char, interaction)
+    await interaction.response.send_message(
+        f"*Rolling as **{char['name']}** — {char['cls']}...*",
+        view=view,
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(name="debug_chatter", description="Debug chatter rewards state (admin)")
@@ -2929,11 +2948,6 @@ async def on_ready():
         bot.add_view(WordGameStartView())
         bot.add_view(NewQuestionView("casual"))
         bot.add_view(NewQuestionView("typology"))
-        try:
-            dnd.setup(bot)
-            print("[DnD] Roll system loaded.")
-        except Exception as e:
-            print(f"[DnD] Setup failed: {e}")
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
         synced = await bot.tree.sync()

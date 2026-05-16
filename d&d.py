@@ -366,39 +366,33 @@ async def _get_dm_webhook(
     channel: discord.TextChannel,
     member:  discord.Member = None,
 ) -> discord.Webhook:
-    """Return (or create) a Dungeon Master webhook, baking the member's avatar in at creation."""
+    """Return (or create) a Dungeon Master webhook. Avatar is set once at creation/first-fix."""
     cache_key = f"{channel.id}:dm"
 
-    # Helper: read avatar bytes (None if unavailable)
-    async def _avatar_bytes():
-        if member is None:
-            return None
-        try:
-            return await member.display_avatar.read()
-        except Exception:
-            return None
-
+    # Fast path: already cached this session — return immediately
     if cache_key in _webhook_cache:
-        cached = _webhook_cache[cache_key]
-        # Refresh avatar each time we have fresh member data
-        if member:
-            try:
-                await cached.edit(avatar=await _avatar_bytes())
-            except Exception:
-                pass
-        return cached
+        return _webhook_cache[cache_key]
 
     for wh in await channel.webhooks():
         if wh.name == "DnD_DungeonMaster":
-            if member:
+            # One-time fix: if webhook has no avatar yet, set it now
+            if wh.avatar is None and member:
                 try:
-                    await wh.edit(avatar=await _avatar_bytes())
+                    ab = await member.display_avatar.read()
+                    wh = await wh.edit(avatar=ab)
                 except Exception:
                     pass
             _webhook_cache[cache_key] = wh
             return wh
 
-    wh = await channel.create_webhook(name="DnD_DungeonMaster", avatar=await _avatar_bytes())
+    # Create fresh webhook with avatar baked in
+    avatar_bytes = None
+    if member:
+        try:
+            avatar_bytes = await member.display_avatar.read()
+        except Exception:
+            pass
+    wh = await channel.create_webhook(name="DnD_DungeonMaster", avatar=avatar_bytes)
     _webhook_cache[cache_key] = wh
     return wh
 
@@ -707,28 +701,4 @@ async def process_quote(message: discord.Message) -> bool:
         print(f"[DnD] Quote webhook error: {e}")
         return False
 
-# ======================== BOT SETUP ========================
-
-def setup(bot) -> None:
-    """Register /roll with the bot's command tree. Call once in on_ready."""
-
-    @bot.tree.command(name="roll", description="Roll dice as your D&D character")
-    async def roll_cmd(interaction: discord.Interaction):
-        uid      = str(interaction.user.id)
-        char_key = PLAYER_CHARS.get(uid)
-
-        if not char_key:
-            await interaction.response.send_message(
-                "❌ You don't have a character assigned - ask the DM!",
-                ephemeral=True,
-            )
-            return
-
-        char = CHARACTERS[char_key]
-        view = RollView(char_key, char, interaction)
-
-        await interaction.response.send_message(
-            f"*Rolling as **{char['name']}** - {char['cls']}...*",
-            view=view,
-            ephemeral=True,
-        )
+# /roll is registered directly in bot.py via @bot.tree.command, same as all other commands.
