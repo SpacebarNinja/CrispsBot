@@ -351,6 +351,14 @@ async def _get_char_webhook(channel: discord.TextChannel, char_key: str) -> disc
 
     for wh in await channel.webhooks():
         if wh.name == wh_name:
+            # Repair missing avatar (happens if webhook was created before PFP was deployed)
+            if wh.avatar is None:
+                pfp_path = PFP_DIR / char["pfp"]
+                if pfp_path.exists():
+                    try:
+                        await wh.edit(avatar=pfp_path.read_bytes())
+                    except Exception as e:
+                        print(f"[DnD] Could not update avatar for {wh_name}: {e}")
             _webhook_cache[cache_key] = wh
             return wh
 
@@ -651,6 +659,26 @@ class RollView(discord.ui.View):
 # ======================== QUOTE AUTO-SUDO ========================
 
 _QUOTE_STARTERS = ('"', '\u201c', '\u201d', '\u00ab', '\u00bb')
+
+
+async def warm_webhooks(bot) -> None:
+    """Pre-fetch / create all character + DM webhooks for the quote channel.
+    Called from on_ready so the first quoted message hits a warm cache."""
+    unique_chars = set(PLAYER_CHARS.values())
+    for guild in bot.guilds:
+        channel = guild.get_channel(QUOTE_CHANNEL_ID)
+        if not isinstance(channel, discord.TextChannel):
+            continue
+        for char_key in unique_chars:
+            if char_key in CHARACTERS:
+                try:
+                    await _get_char_webhook(channel, char_key)
+                except Exception as e:
+                    print(f"[DnD] Pre-warm {char_key} in {guild.name}: {e}")
+        try:
+            await _get_dm_webhook(channel)
+        except Exception as e:
+            print(f"[DnD] Pre-warm DM in {guild.name}: {e}")
 
 
 async def process_quote(message: discord.Message) -> bool:

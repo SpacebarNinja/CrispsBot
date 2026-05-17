@@ -1200,12 +1200,25 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.1.2"
+BOT_VERSION = "v4.2.0"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
 async def version_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(f"Bot version: **{BOT_VERSION}**", ephemeral=True)
+
+
+@bot.tree.command(name="sync", description="Force re-sync slash commands to this server (admin)")
+@app_commands.default_permissions(administrator=True)
+async def sync_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    bot.tree.copy_global_to(guild=interaction.guild)
+    cmds = await bot.tree.sync(guild=interaction.guild)
+    names = ", ".join(f"`/{c.name}`" for c in cmds)
+    await interaction.followup.send(
+        f"✅ Synced **{len(cmds)}** commands to **{interaction.guild.name}**:\n{names}",
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(name="roll", description="Roll dice as your D&D character 🎲")
@@ -2950,15 +2963,24 @@ async def on_ready():
         bot.add_view(NewQuestionView("typology"))
         schedule_loop.start()
         bot.loop.create_task(chip_drop_cycle())
-        synced = await bot.tree.sync()
-        # Copy global commands into each guild tree first, then sync for instant visibility
+        # Guild-only sync — instant visibility, no 1-hour global propagation delay.
+        # Global bot.tree.sync() is intentionally omitted: it creates a pending global
+        # copy of every command that can shadow the guild-specific version for up to 1h.
         for _guild in bot.guilds:
             try:
                 bot.tree.copy_global_to(guild=_guild)
-                await bot.tree.sync(guild=_guild)
+                guild_cmds = await bot.tree.sync(guild=_guild)
+                print(f"[Tree] Synced {len(guild_cmds)} commands to {_guild.name}: "
+                      f"{[c.name for c in guild_cmds]}")
             except Exception as _e:
-                print(f"[Tree] Guild sync failed for {_guild.name}: {_e}")
-        print(f"✅ {bot.user} is online! Synced {len(synced)} commands globally. ({BOT_VERSION})")
+                print(f"[Tree] Guild sync FAILED for {_guild.name}: {_e}")
+        # Pre-warm DnD webhook cache so first quote is instant after restart
+        try:
+            await dnd.warm_webhooks(bot)
+            print("[DnD] Webhooks pre-warmed.")
+        except Exception as _e:
+            print(f"[DnD] Webhook pre-warm failed: {_e}")
+        print(f"✅ {bot.user} is online! ({BOT_VERSION})")
 
 
 @bot.event
