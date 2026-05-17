@@ -461,7 +461,6 @@ class DamageModal(discord.ui.Modal, title="Damage Roll"):
 
         await interaction.response.defer(ephemeral=True)
         await _send_as_char(interaction.channel, self.char_key, text)
-        await interaction.followup.send("✅ Rolled!", ephemeral=True)
         try:
             await self.roll_interaction.edit_original_response(
                 content="✅ Done! Check the channel.", view=None
@@ -497,7 +496,6 @@ class CustomRollModal(discord.ui.Modal, title="Custom Roll"):
 
         await interaction.response.defer(ephemeral=True)
         await _send_as_char(interaction.channel, self.char_key, text)
-        await interaction.followup.send("✅ Rolled!", ephemeral=True)
         try:
             await self.roll_interaction.edit_original_response(
                 content="✅ Done! Check the channel.", view=None
@@ -613,7 +611,6 @@ class CombatSavesSelect(discord.ui.Select):
         await interaction.response.defer(ephemeral=True)
         result = resolve_roll(choice, self.char)
         await _send_as_char(channel, self.char_key, result)
-        await interaction.followup.send("✅ Rolled!", ephemeral=True)
         try:
             await self.roll_interaction.edit_original_response(
                 content="✅ Done! Check the channel.", view=None
@@ -649,7 +646,6 @@ class ChecksDiceSelect(discord.ui.Select):
         await interaction.response.defer(ephemeral=True)
         result = resolve_roll(choice, self.char)
         await _send_as_char(channel, self.char_key, result)
-        await interaction.followup.send("✅ Rolled!", ephemeral=True)
         try:
             await self.roll_interaction.edit_original_response(
                 content="✅ Done! Check the channel.", view=None
@@ -720,8 +716,8 @@ async def process_quote(message: discord.Message) -> bool:
             await _send_as_char(message.channel, PLAYER_CHARS[uid], message.content)
         await message.delete()
         return True
-    except (discord.Forbidden, discord.HTTPException) as e:
-        print(f"[DnD] Quote webhook error: {e}")
+    except Exception as e:
+        print(f"[DnD] Quote error (uid={uid}, is_dm={is_dm}): {type(e).__name__}: {e}")
         return False
 
 # /roll is registered directly in bot.py via @bot.tree.command, same as all other commands.
