@@ -398,7 +398,13 @@ async def _send_as_char(
     send_kw = dict(username=char["name"], allowed_mentions=discord.AllowedMentions.none())
     if isinstance(channel, discord.Thread):
         send_kw["thread"] = channel
-    await wh.send(content, **send_kw)
+    try:
+        await wh.send(content, **send_kw)
+    except discord.NotFound:
+        # Webhook was deleted — bust cache and recreate
+        _webhook_cache.pop(f"{wh_channel.id}:{char_key}", None)
+        wh = await _get_char_webhook(wh_channel, char_key)
+        await wh.send(content, **send_kw)
 
 
 async def _send_as_dm(
@@ -418,7 +424,13 @@ async def _send_as_dm(
     )
     if isinstance(channel, discord.Thread):
         send_kw["thread"] = channel
-    await wh.send(content, **send_kw)
+    try:
+        await wh.send(content, **send_kw)
+    except discord.NotFound:
+        # Webhook was deleted — bust cache and recreate
+        _webhook_cache.pop(f"{wh_channel.id}:dm", None)
+        wh = await _get_dm_webhook(wh_channel)
+        await wh.send(content, **send_kw)
 
 # ======================== MODALS ========================
 
