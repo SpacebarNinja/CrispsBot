@@ -682,7 +682,7 @@ class CombatSavesSelect(discord.ui.Select):
         self.char             = char
         self.roll_interaction = roll_interaction
         super().__init__(
-            placeholder="⚔️  Combat, Saves & Utility",
+            placeholder="Combat, Saves & Utility",
             options=_combat_options(char),
             row=0,
         )
@@ -718,7 +718,7 @@ class ChecksDiceSelect(discord.ui.Select):
         self.char             = char
         self.roll_interaction = roll_interaction
         super().__init__(
-            placeholder="🎲  Ability Checks & Dice",
+            placeholder="Ability Checks & Dice",
             options=_check_options(char),
             row=1,
         )
@@ -770,7 +770,7 @@ class SkillsSelect(discord.ui.Select):
         self.char             = char
         self.roll_interaction = roll_interaction
         super().__init__(
-            placeholder="🧠  Skill Checks",
+            placeholder="Skill Checks",
             options=_skill_options(char),
             row=2,
         )
