@@ -970,16 +970,15 @@ async def warm_webhooks(bot) -> None:
 
 async def process_quote(message: discord.Message) -> bool:
     """
-    If the message is in the quote channel and starts with a quote character
-    (or has attachments), delete it and re-send via the character's webhook.
-    Preserves Discord reply context as a blockquote preview and forwards files.
+    If the message is in the quote channel and starts with a quote character,
+    delete it and re-send via the character's webhook.
+    Any attachments on the same message are forwarded too.
+    A quote starter is always required — attachments alone do NOT trigger roleplay.
     Returns True if handled (caller should skip further processing).
     """
     if message.channel.id != QUOTE_CHANNEL_ID:
         return False
-    has_quote = bool(message.content) and message.content.startswith(_QUOTE_STARTERS)
-    has_attachments = bool(message.attachments)
-    if not has_quote and not has_attachments:
+    if not (message.content and message.content.startswith(_QUOTE_STARTERS)):
         return False
     if not isinstance(message.channel, (discord.TextChannel, discord.Thread)):
         return False
