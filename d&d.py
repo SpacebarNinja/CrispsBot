@@ -995,8 +995,12 @@ async def process_quote(message: discord.Message) -> bool:
         ref = message.reference.resolved
         ref_name = ref.author.display_name
         if ref.content:
-            ref_preview = (ref.content[:100] + "\u2026") if len(ref.content) > 100 else ref.content
-            content = f"> **{ref_name}** \u2014 {ref_preview}\n{content}"
+            # Strip existing blockquote lines (> ...) so reply chains don't stack
+            ref_lines = [l for l in ref.content.splitlines() if not l.startswith(">")]
+            ref_text = " ".join(ref_lines).strip()
+            if ref_text:
+                ref_preview = (ref_text[:100] + "\u2026") if len(ref_text) > 100 else ref_text
+                content = f"> **{ref_name}** \u2014 {ref_preview}\n{content}"
         elif ref.attachments:
             content = f"> *[image from {ref_name}]*\n{content}"
 
