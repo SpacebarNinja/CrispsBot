@@ -7,6 +7,7 @@ All output formatting lives in the OUTPUT FORMATTING section - edit there to
 change how roll results look.
 """
 
+import io
 import discord
 import random
 import re
@@ -490,6 +491,7 @@ async def _send_as_char(
     channel: discord.abc.Messageable,
     char_key: str,
     content: str,
+    files: list = None,
 ) -> None:
     """Send as a character. Works in both TextChannels and Threads."""
     char = CHARACTERS[char_key]
@@ -500,18 +502,27 @@ async def _send_as_char(
     send_kw = dict(username=char["name"], allowed_mentions=discord.AllowedMentions.none())
     if isinstance(channel, discord.Thread):
         send_kw["thread"] = channel
+    if files:
+        send_kw["files"] = files
     try:
-        await wh.send(content, **send_kw)
+        if content:
+            await wh.send(content, **send_kw)
+        else:
+            await wh.send(**send_kw)
     except discord.NotFound:
         # Webhook was deleted — bust cache and recreate
         _webhook_cache.pop(f"{wh_channel.id}:{char_key}", None)
         wh = await _get_char_webhook(wh_channel, char_key)
-        await wh.send(content, **send_kw)
+        if content:
+            await wh.send(content, **send_kw)
+        else:
+            await wh.send(**send_kw)
 
 
 async def _send_as_dm(
     channel: discord.abc.Messageable,
     content: str,
+    files: list = None,
 ) -> None:
     """Send as Dungeon Master using PFP_DM.png baked into the webhook."""
     wh_channel = channel.parent if isinstance(channel, discord.Thread) else channel
@@ -524,13 +535,21 @@ async def _send_as_dm(
     )
     if isinstance(channel, discord.Thread):
         send_kw["thread"] = channel
+    if files:
+        send_kw["files"] = files
     try:
-        await wh.send(content, **send_kw)
+        if content:
+            await wh.send(content, **send_kw)
+        else:
+            await wh.send(**send_kw)
     except discord.NotFound:
         # Webhook was deleted — bust cache and recreate
         _webhook_cache.pop(f"{wh_channel.id}:dm", None)
         wh = await _get_dm_webhook(wh_channel)
-        await wh.send(content, **send_kw)
+        if content:
+            await wh.send(content, **send_kw)
+        else:
+            await wh.send(**send_kw)
 
 # ======================== MODALS ========================
 
@@ -951,13 +970,16 @@ async def warm_webhooks(bot) -> None:
 
 async def process_quote(message: discord.Message) -> bool:
     """
-    If the message is in the quote channel and starts with a quote character,
-    delete it and re-send via the character's webhook.
+    If the message is in the quote channel and starts with a quote character
+    (or has attachments), delete it and re-send via the character's webhook.
+    Preserves Discord reply context as a blockquote preview and forwards files.
     Returns True if handled (caller should skip further processing).
     """
     if message.channel.id != QUOTE_CHANNEL_ID:
         return False
-    if not message.content.startswith(_QUOTE_STARTERS):
+    has_quote = bool(message.content) and message.content.startswith(_QUOTE_STARTERS)
+    has_attachments = bool(message.attachments)
+    if not has_quote and not has_attachments:
         return False
     if not isinstance(message.channel, (discord.TextChannel, discord.Thread)):
         return False
@@ -968,12 +990,32 @@ async def process_quote(message: discord.Message) -> bool:
     if not is_dm and uid not in PLAYER_CHARS:
         return False
 
+    # Build content, prepending a blockquote preview if this is a Discord reply
+    content = message.content or ""
+    if message.reference and isinstance(getattr(message.reference, "resolved", None), discord.Message):
+        ref = message.reference.resolved
+        ref_name = ref.author.display_name
+        if ref.content:
+            ref_preview = (ref.content[:100] + "\u2026") if len(ref.content) > 100 else ref.content
+            content = f"> **{ref_name}** \u2014 {ref_preview}\n{content}"
+        elif ref.attachments:
+            content = f"> *[image from {ref_name}]*\n{content}"
+
+    # Download attachments for re-upload
+    files = []
+    for att in message.attachments:
+        try:
+            data = await att.read()
+            files.append(discord.File(io.BytesIO(data), filename=att.filename))
+        except Exception as e:
+            print(f"[DnD] Failed to read attachment {att.filename}: {e}")
+
     try:
         # Send FIRST (feels instant), then delete — mirrors April Fools behaviour
         if is_dm:
-            await _send_as_dm(message.channel, message.content)
+            await _send_as_dm(message.channel, content, files=files or None)
         else:
-            await _send_as_char(message.channel, PLAYER_CHARS[uid], message.content)
+            await _send_as_char(message.channel, PLAYER_CHARS[uid], content, files=files or None)
         await message.delete()
         return True
     except Exception as e:
