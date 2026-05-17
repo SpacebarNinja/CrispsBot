@@ -705,8 +705,6 @@ class CombatSavesSelect(discord.ui.Select):
         for item in view.children:
             if isinstance(item, RollConfirmButton):
                 item.disabled = False
-            elif isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)) and item is not self:
-                item.disabled = True
         await interaction.response.edit_message(
             content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
             view=view,
@@ -742,8 +740,6 @@ class ChecksDiceSelect(discord.ui.Select):
         for item in view.children:
             if isinstance(item, RollConfirmButton):
                 item.disabled = False
-            elif isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)) and item is not self:
-                item.disabled = True
         await interaction.response.edit_message(
             content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
             view=view,
@@ -784,8 +780,6 @@ class SkillsSelect(discord.ui.Select):
         for item in view.children:
             if isinstance(item, RollConfirmButton):
                 item.disabled = False
-            elif isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)) and item is not self:
-                item.disabled = True
         await interaction.response.edit_message(
             content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
             view=view,
@@ -841,9 +835,6 @@ class RollConfirmButton(discord.ui.Button):
         # Reset selection, re-enable all dropdowns
         view.selected_roll = None
         self.disabled = True
-        for item in view.children:
-            if isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)):
-                item.disabled = False
         await interaction.response.edit_message(
             content=_roll_view_content(view.char, None, view.adv_mode, view.active_features),
             view=view,
