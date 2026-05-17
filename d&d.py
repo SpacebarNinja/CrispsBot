@@ -197,7 +197,6 @@ FEATURE_DEFS: dict[str, dict] = {
         "label":   "🧧 Dual Mind",
         "desc":    "ADV: all WIS saves (Kalashtar)",
         "adv_on":  {"save_wis"},
-        "auto_on": True,
     },
     "archery_style": {
         "label":        "🏹 Archery Style",
@@ -706,7 +705,8 @@ class CombatSavesSelect(discord.ui.Select):
         for item in view.children:
             if isinstance(item, RollConfirmButton):
                 item.disabled = False
-                break
+            elif isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)) and item is not self:
+                item.disabled = True
         await interaction.response.edit_message(
             content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
             view=view,
@@ -742,7 +742,8 @@ class ChecksDiceSelect(discord.ui.Select):
         for item in view.children:
             if isinstance(item, RollConfirmButton):
                 item.disabled = False
-                break
+            elif isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)) and item is not self:
+                item.disabled = True
         await interaction.response.edit_message(
             content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
             view=view,
@@ -783,7 +784,8 @@ class SkillsSelect(discord.ui.Select):
         for item in view.children:
             if isinstance(item, RollConfirmButton):
                 item.disabled = False
-                break
+            elif isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)) and item is not self:
+                item.disabled = True
         await interaction.response.edit_message(
             content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
             view=view,
@@ -800,21 +802,23 @@ def _choice_label(choice: str) -> str:
 
 
 def _roll_view_content(char: dict, selected_roll, adv_mode, active_features=None) -> str:
-    base = f"*Rolling as **{char['name']}** — {char['cls']}...*"
-    parts = []
-    if selected_roll:
-        parts.append(f"🎯 **{_choice_label(selected_roll)}**")
-    if adv_mode == "advantage":
-        parts.append("🔼 w/Advantage")
-    elif adv_mode == "disadvantage":
-        parts.append("🔽 w/Disadvantage")
+    lines = [f"*Rolling as **{char['name']}** — {char['cls']}...*"]
+    # Passive features line — always shown if character has features
     if active_features:
-        for fk in active_features:
-            if fk in FEATURE_DEFS:
-                parts.append(FEATURE_DEFS[fk]["label"])
-    if parts:
-        return base + "\n-# " + " • ".join(parts)
-    return base
+        feat_labels = [FEATURE_DEFS[fk]["label"] for fk in active_features if fk in FEATURE_DEFS]
+        if feat_labels:
+            lines.append("-# ✶ " + " • ".join(feat_labels))
+    # Selection + manual adv/dis overrides
+    sel_parts = []
+    if selected_roll:
+        sel_parts.append(f"🎯 **{_choice_label(selected_roll)}**")
+    if adv_mode == "advantage":
+        sel_parts.append("🔼 Override: w/Advantage")
+    elif adv_mode == "disadvantage":
+        sel_parts.append("🔽 Override: w/Disadvantage")
+    if sel_parts:
+        lines.append("-# " + " • ".join(sel_parts))
+    return "\n".join(lines)
 
 
 class RollConfirmButton(discord.ui.Button):
@@ -834,9 +838,12 @@ class RollConfirmButton(discord.ui.Button):
         )
         channel = interaction.channel
         result  = resolve_roll(choice, view.char, effective_adv, atk_extra)
-        # Reset selection — keep view alive for more rolls
+        # Reset selection, re-enable all dropdowns
         view.selected_roll = None
         self.disabled = True
+        for item in view.children:
+            if isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)):
+                item.disabled = False
         await interaction.response.edit_message(
             content=_roll_view_content(view.char, None, view.adv_mode, view.active_features),
             view=view,
@@ -865,41 +872,12 @@ class AdvToggleButton(discord.ui.Button):
         )
 
 
-class FeatureToggleButton(discord.ui.Button):
-    """Per-character class/racial feature toggle. Row 4."""
-    def __init__(self, feature_key: str):
-        fdef = FEATURE_DEFS[feature_key]
-        auto = fdef.get("auto_on", False)
-        super().__init__(
-            label=fdef["label"],
-            style=discord.ButtonStyle.success if auto else discord.ButtonStyle.secondary,
-            row=4,
-        )
-        self.feature_key = feature_key
-
-    async def callback(self, interaction: discord.Interaction):
-        view: RollView = self.view
-        if self.feature_key in view.active_features:
-            view.active_features.discard(self.feature_key)
-            self.style = discord.ButtonStyle.secondary
-        else:
-            view.active_features.add(self.feature_key)
-            self.style = discord.ButtonStyle.success
-        await interaction.response.edit_message(
-            content=_roll_view_content(view.char, view.selected_roll, view.adv_mode, view.active_features),
-            view=view,
-        )
-
-
 class RollView(discord.ui.View):
     def __init__(self, char_key: str, char: dict, roll_interaction: discord.Interaction):
         super().__init__(timeout=90)
         self.adv_mode: str | None = None
         self.selected_roll: str | None = None
-        self.active_features: set[str] = {
-            fk for fk in char.get("features", [])
-            if FEATURE_DEFS.get(fk, {}).get("auto_on")
-        }
+        self.active_features: set[str] = set(char.get("features", []))  # always on — passive
         self.char = char
         self.char_key = char_key
         self.roll_interaction = roll_interaction
@@ -909,9 +887,6 @@ class RollView(discord.ui.View):
         self.add_item(RollConfirmButton())
         self.add_item(AdvToggleButton("advantage"))
         self.add_item(AdvToggleButton("disadvantage"))
-        for fk in char.get("features", []):
-            if fk in FEATURE_DEFS:
-                self.add_item(FeatureToggleButton(fk))
 
     async def on_timeout(self):
         for item in self.children:
