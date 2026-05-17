@@ -160,7 +160,7 @@ def fmt_ability_check(char: dict, stat: str) -> str:
     roll = _d20()
     eq   = f"`{roll}`" + (f" {_fmt_mod(mod)}" if mod != 0 else "")
     return (
-        f"**{STAT_LABELS[stat]} Check**{_crit_tag(roll)}\n"
+        f"🎲 **{STAT_LABELS[stat]} Check**{_crit_tag(roll)}\n"
         f"╰ {eq} = **{roll + mod}**"
     )
 
@@ -182,7 +182,7 @@ def fmt_saving_throw(char: dict, stat: str) -> str:
         breakdown += f" *(prof +{PROF_BONUS})*"
 
     return (
-        f"**{STAT_LABELS[stat]} Save**{prof_tag}{_crit_tag(roll)}\n"
+        f"🎲 **{STAT_LABELS[stat]} Save**{prof_tag}{_crit_tag(roll)}\n"
         f"╰ {breakdown} = **{total}**"
     )
 
@@ -198,7 +198,7 @@ def fmt_attack_roll(char: dict) -> str:
     elif roll == 1: crit = " 💀 **CRITICAL MISS**"
 
     return (
-        f"**Attack Roll**{crit}\n"
+        f"🎲 **Attack Roll**{crit}\n"
         f"╰ `{roll}` {_fmt_mod(bonus)} *({STAT_ABBR[stat]} + Prof)* = **{total}**"
     )
 
@@ -208,7 +208,7 @@ def fmt_initiative(char: dict) -> str:
     roll  = _d20()
     total = roll + mod
     return (
-        f"**Initiative**{_crit_tag(roll)}\n"
+        f"🎲 **Initiative**{_crit_tag(roll)}\n"
         f"╰ `{roll}` {_fmt_mod(mod)} *(DEX)* = **{total}**"
     )
 
@@ -220,7 +220,7 @@ def fmt_advantage() -> str:
     if kept == 20: crit = " ✨ **NAT 20!**"
     elif kept == 1: crit = " 💀 **NAT 1**"
     return (
-        f"**Roll with Advantage**{crit}\n"
+        f"🎲 **Roll with Advantage**{crit}\n"
         f"╰ kept `{kept}`, dropped ~~`{dropped}`~~ → **{kept}**"
     )
 
@@ -232,7 +232,7 @@ def fmt_disadvantage() -> str:
     if kept == 1: crit = " 💀 **NAT 1**"
     elif kept == 20: crit = " ✨ NAT 20 *(against the odds)*"
     return (
-        f"**Roll with Disadvantage**{crit}\n"
+        f"🎲 **Roll with Disadvantage**{crit}\n"
         f"╰ kept `{kept}`, dropped ~~`{dropped}`~~ → **{kept}**"
     )
 
@@ -252,7 +252,7 @@ def fmt_death_save() -> str:
         verdict = "❌ **Failure**"
         note    = "Fading fast..."
     return (
-        f"**Death Saving Throw**\n"
+        f"🎲 **Death Saving Throw**\n"
         f"╰ `{roll}` → {verdict}\n"
         f"  *{note}*"
     )
@@ -264,7 +264,7 @@ def fmt_hit_die(char: dict) -> str:
     roll    = random.randint(1, die)
     healed  = max(1, roll + con_mod)
     return (
-        f"**Hit Die** *(Short Rest)*\n"
+        f"🎲 **Hit Die** *(Short Rest)*\n"
         f"╰ `d{die}: {roll}` {_fmt_mod(con_mod)} *(CON)* = **+{healed} HP**"
     )
 
@@ -272,7 +272,7 @@ def fmt_hit_die(char: dict) -> str:
 def fmt_raw_die(sides: int) -> str:
     roll = random.randint(1, sides)
     return (
-        f"**d{sides}**\n"
+        f"🎲 **d{sides}**\n"
         f"╰ → **{roll}**"
     )
 
@@ -281,7 +281,7 @@ def fmt_damage_roll(formula: str, rolls: list[int], modifier: int, total: int) -
     roll_str = " + ".join(f"`{r}`" for r in rolls)
     mod_str  = f" {_fmt_mod(modifier)}" if modifier != 0 else ""
     return (
-        f"**Damage** `{formula}`\n"
+        f"🎲 **Damage** `{formula}`\n"
         f"╰ {roll_str}{mod_str} = **{total} dmg**"
     )
 
@@ -290,7 +290,7 @@ def fmt_custom_roll(formula: str, rolls: list[int], modifier: int, total: int) -
     roll_str = " + ".join(f"`{r}`" for r in rolls)
     mod_str  = f" {_fmt_mod(modifier)}" if modifier != 0 else ""
     return (
-        f"**Custom** `{formula}`\n"
+        f"🎲 **Custom** `{formula}`\n"
         f"╰ {roll_str}{mod_str} = **{total}**"
     )
 
