@@ -702,6 +702,7 @@ class CombatSavesSelect(discord.ui.Select):
 
         view: RollView = self.view
         view.selected_roll = choice
+        _sync_select_defaults(view, self, choice)
         for item in view.children:
             if isinstance(item, RollConfirmButton):
                 item.disabled = False
@@ -737,6 +738,7 @@ class ChecksDiceSelect(discord.ui.Select):
 
         view: RollView = self.view
         view.selected_roll = choice
+        _sync_select_defaults(view, self, choice)
         for item in view.children:
             if isinstance(item, RollConfirmButton):
                 item.disabled = False
@@ -777,6 +779,7 @@ class SkillsSelect(discord.ui.Select):
         choice = self.values[0]
         view: RollView = self.view
         view.selected_roll = choice
+        _sync_select_defaults(view, self, choice)
         for item in view.children:
             if isinstance(item, RollConfirmButton):
                 item.disabled = False
@@ -793,6 +796,15 @@ def _choice_label(choice: str) -> str:
     if choice.startswith("die_"):   return f"d{choice[4:]}"
     return {"attack": "Attack Roll", "initiative": "Initiative",
             "death_save": "Death Save", "hit_die": "Hit Die"}.get(choice, choice)
+
+
+def _sync_select_defaults(view: discord.ui.View, active_select, chosen_value: str) -> None:
+    """Mark chosen_value as default in active_select; clear defaults on the other two."""
+    for item in view.children:
+        if not isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)):
+            continue
+        for opt in item.options:
+            opt.default = (item is active_select and opt.value == chosen_value)
 
 
 def _roll_view_content(char: dict, selected_roll, adv_mode, active_features=None) -> str:
@@ -832,9 +844,13 @@ class RollConfirmButton(discord.ui.Button):
         )
         channel = interaction.channel
         result  = resolve_roll(choice, view.char, effective_adv, atk_extra)
-        # Reset selection, re-enable all dropdowns
+        # Reset selection, clear all dropdown defaults
         view.selected_roll = None
         self.disabled = True
+        for item in view.children:
+            if isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)):
+                for opt in item.options:
+                    opt.default = False
         await interaction.response.edit_message(
             content=_roll_view_content(view.char, None, view.adv_mode, view.active_features),
             view=view,
