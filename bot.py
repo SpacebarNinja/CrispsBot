@@ -1200,7 +1200,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.2.0"
+BOT_VERSION = "v4.2.1"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -2974,6 +2974,17 @@ async def on_ready():
                       f"{[c.name for c in guild_cmds]}")
             except Exception as _e:
                 print(f"[Tree] Guild sync FAILED for {_guild.name}: {_e}")
+        # Wipe any stale globally-registered commands from Discord's servers.
+        # Previous bot versions called bot.tree.sync() globally, which posted /roll
+        # as a global command (1-hour propagation delay). Even after we stopped doing
+        # that, Discord's servers still hold those global commands.  Pushing an empty
+        # global list removes them so only the guild-specific (instant) versions remain.
+        try:
+            bot.tree.clear_commands(guild=None)   # clears local global list
+            await bot.tree.sync()                 # pushes empty list → deletes global commands on Discord
+            print("[Tree] Global command registry wiped (stale global commands removed).")
+        except Exception as _e:
+            print(f"[Tree] Global wipe failed (non-fatal): {_e}")
         # Pre-warm DnD webhook cache so first quote is instant after restart
         try:
             await dnd.warm_webhooks(bot)
