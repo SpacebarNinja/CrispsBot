@@ -862,6 +862,9 @@ async def do_activity_rewards(guild_id: str):
 @tasks.loop(seconds=60)
 async def schedule_loop():
     """Main schedule loop — checks daily questions and chatter every minute."""
+    # All automatic posting is currently disabled — flip flags in config.FEATURES to re-enable.
+    if not any(config.FEATURES.get(k) for k in ("casual", "typology", "chatter_rewards", "activity_rewards", "code_purple")):
+        return
     now_utc = datetime.now(timezone.utc)
     now_manila = datetime.now(MANILA_TZ)
 

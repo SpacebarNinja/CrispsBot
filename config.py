@@ -49,12 +49,12 @@ CODE_PURPLE = {
 }
 
 FEATURES = {
-    "casual": True,
-    "typology": True,
-    "chatter_rewards": True,
-    "chip_drops": True,
-    "code_purple": True,
-    "activity_rewards": False,  # Disabled - use chatter_rewards instead
+    "casual": False,
+    "typology": False,
+    "chatter_rewards": False,
+    "chip_drops": False,
+    "code_purple": False,
+    "activity_rewards": False,
 }
 
 LEADERBOARD = {
