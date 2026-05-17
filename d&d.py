@@ -59,6 +59,7 @@ CHARACTERS: dict[str, dict] = {
         "int": 18, "wis": 11, "cha": 14,
         "save_profs":  {"int", "wis"},
         "skill_profs": {"arcana", "history"},
+        "features":    [],
         "attack_stat": "int",
         "speed":       30,
     },
@@ -73,6 +74,7 @@ CHARACTERS: dict[str, dict] = {
         "int": 13, "wis": 12, "cha": 12,
         "save_profs":  {"str", "con"},
         "skill_profs": {"athletics", "perception"},
+        "features":    [],
         "attack_stat": "str",
         "speed":       30,
     },
@@ -87,6 +89,7 @@ CHARACTERS: dict[str, dict] = {
         "int": 14, "wis": 15, "cha": 13,
         "save_profs":  {"str", "dex"},
         "skill_profs": {"nature", "perception", "stealth", "survival"},
+        "features":    ["archery_style"],
         "attack_stat": "dex",
         "speed":       30,
     },
@@ -101,6 +104,7 @@ CHARACTERS: dict[str, dict] = {
         "int": 4,  "wis": 12, "cha": 11,
         "save_profs":  {"str", "con"},
         "skill_profs": {"athletics", "intimidation", "stealth"},
+        "features":    ["rage", "reckless_attack", "danger_sense"],
         "attack_stat": "str",
         "speed":       30,
     },
@@ -115,6 +119,7 @@ CHARACTERS: dict[str, dict] = {
         "int": 13, "wis": 18, "cha": 8,
         "save_profs":  {"int", "wis"},
         "skill_profs": {"animal_handling", "nature", "perception", "survival"},
+        "features":    [],
         "attack_stat": "wis",
         "speed":       35,
     },
@@ -129,6 +134,7 @@ CHARACTERS: dict[str, dict] = {
         "int": 13, "wis": 16, "cha": 16,
         "save_profs":  {"wis", "cha"},
         "skill_profs": {"insight", "persuasion"},
+        "features":    ["kalashtar_dual_mind"],
         "attack_stat": "str",
         "speed":       30,
     },
@@ -166,6 +172,40 @@ SKILLS: dict[str, tuple[str, str]] = {
     "persuasion":      ("cha", "Persuasion"),
 }
 
+# ======================== CLASS / RACIAL FEATURES ========================
+# Each entry: adv_on = roll choice values that get advantage while active.
+# auto_on = toggled ON by default when the RollView opens.
+# attack_bonus = flat bonus added to the attack roll total.
+
+FEATURE_DEFS: dict[str, dict] = {
+    "rage": {
+        "label":  "⚡ Rage",
+        "desc":   "ADV: STR checks, STR saves, Athletics",
+        "adv_on": {"check_str", "save_str", "skill_athletics"},
+    },
+    "reckless_attack": {
+        "label":  "🗡️ Reckless Atk",
+        "desc":   "ADV: Attack rolls (melee STR)",
+        "adv_on": {"attack"},
+    },
+    "danger_sense": {
+        "label":  "👁️ Danger Sense",
+        "desc":   "ADV: DEX saves (vs visible threats)",
+        "adv_on": {"save_dex"},
+    },
+    "kalashtar_dual_mind": {
+        "label":   "🧧 Dual Mind",
+        "desc":    "ADV: all WIS saves (Kalashtar)",
+        "adv_on":  {"save_wis"},
+        "auto_on": True,
+    },
+    "archery_style": {
+        "label":        "🏹 Archery Style",
+        "desc":         "+2 to ranged attack rolls",
+        "attack_bonus": 2,
+    },
+}
+
 # ======================== OUTPUT FORMATTING ========================
 # ─── All roll output is assembled here. Edit this section to restyle results. ───
 
@@ -199,6 +239,20 @@ def _adv_suffix(adv_mode) -> str:
     if adv_mode == "advantage":    return " *(w/Advantage)*"
     if adv_mode == "disadvantage": return " *(w/Disadvantage)*"
     return ""
+
+
+def _effective_adv(manual_adv: str | None, active_features: set, choice: str) -> str | None:
+    """Compute 5e-correct adv/dis for a specific roll, merging manual toggle and active features."""
+    feature_adv = any(
+        choice in FEATURE_DEFS[fk].get("adv_on", set())
+        for fk in active_features if fk in FEATURE_DEFS
+    )
+    has_adv = (manual_adv == "advantage") or feature_adv
+    has_dis = manual_adv == "disadvantage"   # no current feature grants dis
+    if has_adv and has_dis: return None       # cancel per 5e rules
+    if has_adv:             return "advantage"
+    if has_dis:             return "disadvantage"
+    return None
 
 
 def fmt_ability_check(char: dict, stat: str, adv_mode=None) -> str:
@@ -252,19 +306,20 @@ def fmt_saving_throw(char: dict, stat: str, adv_mode=None) -> str:
     )
 
 
-def fmt_attack_roll(char: dict, adv_mode=None) -> str:
+def fmt_attack_roll(char: dict, adv_mode=None, extra_bonus: int = 0) -> str:
     stat  = char["attack_stat"]
     bonus = _mod(char[stat]) + PROF_BONUS
     roll, adv_note = _d20_with_mode(adv_mode)
-    total = roll + bonus
+    total = roll + bonus + extra_bonus
 
     crit = ""
     if roll == 20: crit = " ✨ **CRITICAL HIT!**"
     elif roll == 1: crit = " 💀 **CRITICAL MISS**"
 
+    extra_str = f" +{extra_bonus}" if extra_bonus else ""
     return (
         f"🎲 **Attack Roll**{_adv_suffix(adv_mode)}{crit}\n"
-        f"╰ `{roll}`{adv_note} {_fmt_mod(bonus)} *({STAT_ABBR[stat]} + Prof)* = **{total}**"
+        f"╰ `{roll}`{adv_note} {_fmt_mod(bonus)}*({STAT_ABBR[stat]} + Prof{extra_str})* = **{total}**"
     )
 
 
@@ -357,7 +412,7 @@ def roll_dice(count: int, sides: int) -> list[int]:
 
 # ======================== ROLL RESOLVER ========================
 
-def resolve_roll(choice: str, char: dict, adv_mode=None) -> str:
+def resolve_roll(choice: str, char: dict, adv_mode=None, atk_extra: int = 0) -> str:
     """Map a select menu value to a formatted roll string."""
     if choice.startswith("check_"):
         return fmt_ability_check(char, choice[len("check_"):], adv_mode)
@@ -368,7 +423,7 @@ def resolve_roll(choice: str, char: dict, adv_mode=None) -> str:
     if choice.startswith("die_"):
         return fmt_raw_die(int(choice[len("die_"):]))
     dispatch = {
-        "attack":      lambda: fmt_attack_roll(char, adv_mode),
+        "attack":      lambda: fmt_attack_roll(char, adv_mode, atk_extra),
         "initiative":  lambda: fmt_initiative(char, adv_mode),
         "death_save":  lambda: fmt_death_save(adv_mode),
         "hit_die":     lambda: fmt_hit_die(char),
@@ -653,7 +708,7 @@ class CombatSavesSelect(discord.ui.Select):
                 item.disabled = False
                 break
         await interaction.response.edit_message(
-            content=_roll_view_content(view.char, choice, view.adv_mode),
+            content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
             view=view,
         )
 
@@ -689,7 +744,7 @@ class ChecksDiceSelect(discord.ui.Select):
                 item.disabled = False
                 break
         await interaction.response.edit_message(
-            content=_roll_view_content(view.char, choice, view.adv_mode),
+            content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
             view=view,
         )
 
@@ -730,7 +785,7 @@ class SkillsSelect(discord.ui.Select):
                 item.disabled = False
                 break
         await interaction.response.edit_message(
-            content=_roll_view_content(view.char, choice, view.adv_mode),
+            content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
             view=view,
         )
 
@@ -744,7 +799,7 @@ def _choice_label(choice: str) -> str:
             "death_save": "Death Save", "hit_die": "Hit Die"}.get(choice, choice)
 
 
-def _roll_view_content(char: dict, selected_roll, adv_mode) -> str:
+def _roll_view_content(char: dict, selected_roll, adv_mode, active_features=None) -> str:
     base = f"*Rolling as **{char['name']}** — {char['cls']}...*"
     parts = []
     if selected_roll:
@@ -753,6 +808,10 @@ def _roll_view_content(char: dict, selected_roll, adv_mode) -> str:
         parts.append("🔼 w/Advantage")
     elif adv_mode == "disadvantage":
         parts.append("🔽 w/Disadvantage")
+    if active_features:
+        for fk in active_features:
+            if fk in FEATURE_DEFS:
+                parts.append(FEATURE_DEFS[fk]["label"])
     if parts:
         return base + "\n-# " + " • ".join(parts)
     return base
@@ -768,14 +827,18 @@ class RollConfirmButton(discord.ui.Button):
         if not choice:
             await interaction.response.defer(ephemeral=True)
             return
-        adv_mode = view.adv_mode
-        channel  = interaction.channel
-        result   = resolve_roll(choice, view.char, adv_mode)
+        effective_adv = _effective_adv(view.adv_mode, view.active_features, choice)
+        atk_extra = sum(
+            FEATURE_DEFS[fk].get("attack_bonus", 0)
+            for fk in view.active_features if fk in FEATURE_DEFS
+        )
+        channel = interaction.channel
+        result  = resolve_roll(choice, view.char, effective_adv, atk_extra)
         # Reset selection — keep view alive for more rolls
         view.selected_roll = None
         self.disabled = True
         await interaction.response.edit_message(
-            content=_roll_view_content(view.char, None, adv_mode),
+            content=_roll_view_content(view.char, None, view.adv_mode, view.active_features),
             view=view,
         )
         await _send_as_char(channel, view.char_key, result)
@@ -784,7 +847,7 @@ class RollConfirmButton(discord.ui.Button):
 class AdvToggleButton(discord.ui.Button):
     def __init__(self, mode: str):
         label = "🔼 w/ Advantage?" if mode == "advantage" else "🔽 w/ Disadvantage?"
-        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=4)
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=3)
         self.mode = mode
 
     async def callback(self, interaction: discord.Interaction):
@@ -797,7 +860,33 @@ class AdvToggleButton(discord.ui.Button):
                 else:
                     item.style = discord.ButtonStyle.secondary
         await interaction.response.edit_message(
-            content=_roll_view_content(view.char, view.selected_roll, view.adv_mode),
+            content=_roll_view_content(view.char, view.selected_roll, view.adv_mode, view.active_features),
+            view=view,
+        )
+
+
+class FeatureToggleButton(discord.ui.Button):
+    """Per-character class/racial feature toggle. Row 4."""
+    def __init__(self, feature_key: str):
+        fdef = FEATURE_DEFS[feature_key]
+        auto = fdef.get("auto_on", False)
+        super().__init__(
+            label=fdef["label"],
+            style=discord.ButtonStyle.success if auto else discord.ButtonStyle.secondary,
+            row=4,
+        )
+        self.feature_key = feature_key
+
+    async def callback(self, interaction: discord.Interaction):
+        view: RollView = self.view
+        if self.feature_key in view.active_features:
+            view.active_features.discard(self.feature_key)
+            self.style = discord.ButtonStyle.secondary
+        else:
+            view.active_features.add(self.feature_key)
+            self.style = discord.ButtonStyle.success
+        await interaction.response.edit_message(
+            content=_roll_view_content(view.char, view.selected_roll, view.adv_mode, view.active_features),
             view=view,
         )
 
@@ -807,6 +896,10 @@ class RollView(discord.ui.View):
         super().__init__(timeout=90)
         self.adv_mode: str | None = None
         self.selected_roll: str | None = None
+        self.active_features: set[str] = {
+            fk for fk in char.get("features", [])
+            if FEATURE_DEFS.get(fk, {}).get("auto_on")
+        }
         self.char = char
         self.char_key = char_key
         self.roll_interaction = roll_interaction
@@ -816,6 +909,9 @@ class RollView(discord.ui.View):
         self.add_item(RollConfirmButton())
         self.add_item(AdvToggleButton("advantage"))
         self.add_item(AdvToggleButton("disadvantage"))
+        for fk in char.get("features", []):
+            if fk in FEATURE_DEFS:
+                self.add_item(FeatureToggleButton(fk))
 
     async def on_timeout(self):
         for item in self.children:
