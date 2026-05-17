@@ -993,13 +993,19 @@ async def process_quote(message: discord.Message) -> bool:
     content = message.content or ""
     if message.reference and isinstance(getattr(message.reference, "resolved", None), discord.Message):
         ref = message.reference.resolved
-        ref_name = ref.author.display_name
+        # Only use the first word of the display name
+        ref_name = ref.author.display_name.split()[0] if ref.author.display_name else ref.author.display_name
         if ref.content:
             # Strip existing blockquote lines (> ...) so reply chains don't stack
             ref_lines = [l for l in ref.content.splitlines() if not l.startswith(">")]
             ref_text = " ".join(ref_lines).strip()
             if ref_text:
-                ref_preview = (ref_text[:100] + "\u2026") if len(ref_text) > 100 else ref_text
+                # Truncate at ~40 chars but don't cut mid-word
+                if len(ref_text) > 40:
+                    truncated = ref_text[:40].rsplit(" ", 1)[0]
+                    ref_preview = truncated + "..."
+                else:
+                    ref_preview = ref_text
                 content = f"> **{ref_name}** \u2014 {ref_preview}\n{content}"
         elif ref.attachments:
             content = f"> *[image from {ref_name}]*\n{content}"
