@@ -149,30 +149,42 @@ def _fmt_mod(m: int) -> str:
 def _d20() -> int:
     return random.randint(1, 20)
 
+def _d20_with_mode(adv_mode=None):
+    """Roll d20 respecting advantage/disadvantage. Returns (result, annotation)."""
+    if adv_mode == "advantage":
+        r1, r2 = random.randint(1, 20), random.randint(1, 20)
+        kept, dropped = max(r1, r2), min(r1, r2)
+        return kept, f" *(kept ~~`{dropped}`~~)*"
+    elif adv_mode == "disadvantage":
+        r1, r2 = random.randint(1, 20), random.randint(1, 20)
+        kept, dropped = min(r1, r2), max(r1, r2)
+        return kept, f" *(kept ~~`{dropped}`~~)*"
+    return random.randint(1, 20), ""
+
 def _crit_tag(roll: int) -> str:
     if roll == 20: return " ✨ **NAT 20!**"
     if roll == 1:  return " 💀 **NAT 1**"
     return ""
 
 
-def fmt_ability_check(char: dict, stat: str) -> str:
+def fmt_ability_check(char: dict, stat: str, adv_mode=None) -> str:
     mod  = _mod(char[stat])
-    roll = _d20()
-    eq   = f"`{roll}`" + (f" {_fmt_mod(mod)}" if mod != 0 else "")
+    roll, adv_note = _d20_with_mode(adv_mode)
+    eq   = f"`{roll}`{adv_note}" + (f" {_fmt_mod(mod)}" if mod != 0 else "")
     return (
         f"🎲 **{STAT_LABELS[stat]} Check**{_crit_tag(roll)}\n"
         f"╰ {eq} = **{roll + mod}**"
     )
 
 
-def fmt_saving_throw(char: dict, stat: str) -> str:
+def fmt_saving_throw(char: dict, stat: str, adv_mode=None) -> str:
     mod      = _mod(char[stat])
     has_prof = stat in char["save_profs"]
     bonus    = mod + (PROF_BONUS if has_prof else 0)
-    roll     = _d20()
+    roll, adv_note = _d20_with_mode(adv_mode)
     total    = roll + bonus
 
-    breakdown = f"`{roll}`" + (f" {_fmt_mod(bonus)}" if bonus != 0 else "")
+    breakdown = f"`{roll}`{adv_note}" + (f" {_fmt_mod(bonus)}" if bonus != 0 else "")
     prof_tag  = " *(proficient)*" if has_prof else ""
 
     # Show the split when proficiency is involved
@@ -187,10 +199,10 @@ def fmt_saving_throw(char: dict, stat: str) -> str:
     )
 
 
-def fmt_attack_roll(char: dict) -> str:
+def fmt_attack_roll(char: dict, adv_mode=None) -> str:
     stat  = char["attack_stat"]
     bonus = _mod(char[stat]) + PROF_BONUS
-    roll  = _d20()
+    roll, adv_note = _d20_with_mode(adv_mode)
     total = roll + bonus
 
     crit = ""
@@ -199,46 +211,22 @@ def fmt_attack_roll(char: dict) -> str:
 
     return (
         f"🎲 **Attack Roll**{crit}\n"
-        f"╰ `{roll}` {_fmt_mod(bonus)} *({STAT_ABBR[stat]} + Prof)* = **{total}**"
+        f"╰ `{roll}`{adv_note} {_fmt_mod(bonus)} *({STAT_ABBR[stat]} + Prof)* = **{total}**"
     )
 
 
-def fmt_initiative(char: dict) -> str:
+def fmt_initiative(char: dict, adv_mode=None) -> str:
     mod   = _mod(char["dex"])
-    roll  = _d20()
+    roll, adv_note = _d20_with_mode(adv_mode)
     total = roll + mod
     return (
         f"🎲 **Initiative**{_crit_tag(roll)}\n"
-        f"╰ `{roll}` {_fmt_mod(mod)} *(DEX)* = **{total}**"
+        f"╰ `{roll}`{adv_note} {_fmt_mod(mod)} *(DEX)* = **{total}**"
     )
 
 
-def fmt_advantage() -> str:
-    r1, r2 = _d20(), _d20()
-    kept, dropped = max(r1, r2), min(r1, r2)
-    crit = ""
-    if kept == 20: crit = " ✨ **NAT 20!**"
-    elif kept == 1: crit = " 💀 **NAT 1**"
-    return (
-        f"🎲 **Roll with Advantage**{crit}\n"
-        f"╰ kept `{kept}`, dropped ~~`{dropped}`~~ → **{kept}**"
-    )
-
-
-def fmt_disadvantage() -> str:
-    r1, r2 = _d20(), _d20()
-    kept, dropped = min(r1, r2), max(r1, r2)
-    crit = ""
-    if kept == 1: crit = " 💀 **NAT 1**"
-    elif kept == 20: crit = " ✨ NAT 20 *(against the odds)*"
-    return (
-        f"🎲 **Roll with Disadvantage**{crit}\n"
-        f"╰ kept `{kept}`, dropped ~~`{dropped}`~~ → **{kept}**"
-    )
-
-
-def fmt_death_save() -> str:
-    roll = _d20()
+def fmt_death_save(adv_mode=None) -> str:
+    roll, adv_note = _d20_with_mode(adv_mode)
     if roll == 20:
         verdict = "✨ **NAT 20 - Back on your feet!**"
         note    = "Instant stabilize + 1 HP"
@@ -253,7 +241,7 @@ def fmt_death_save() -> str:
         note    = "Fading fast..."
     return (
         f"🎲 **Death Saving Throw**\n"
-        f"╰ `{roll}` → {verdict}\n"
+        f"╰ `{roll}`{adv_note} → {verdict}\n"
         f"  *{note}*"
     )
 
@@ -316,20 +304,18 @@ def roll_dice(count: int, sides: int) -> list[int]:
 
 # ======================== ROLL RESOLVER ========================
 
-def resolve_roll(choice: str, char: dict) -> str:
+def resolve_roll(choice: str, char: dict, adv_mode=None) -> str:
     """Map a select menu value to a formatted roll string."""
     if choice.startswith("check_"):
-        return fmt_ability_check(char, choice[len("check_"):])
+        return fmt_ability_check(char, choice[len("check_"):], adv_mode)
     if choice.startswith("save_"):
-        return fmt_saving_throw(char, choice[len("save_"):])
+        return fmt_saving_throw(char, choice[len("save_"):], adv_mode)
     if choice.startswith("die_"):
         return fmt_raw_die(int(choice[len("die_"):]))
     dispatch = {
-        "attack":      lambda: fmt_attack_roll(char),
-        "initiative":  lambda: fmt_initiative(char),
-        "advantage":   fmt_advantage,
-        "disadvantage":fmt_disadvantage,
-        "death_save":  fmt_death_save,
+        "attack":      lambda: fmt_attack_roll(char, adv_mode),
+        "initiative":  lambda: fmt_initiative(char, adv_mode),
+        "death_save":  lambda: fmt_death_save(adv_mode),
         "hit_die":     lambda: fmt_hit_die(char),
     }
     fn = dispatch.get(choice)
@@ -530,15 +516,7 @@ def _combat_options(char: dict) -> list[discord.SelectOption]:
             description=f"d{die} {_fmt_mod(con_m)}  (CON mod) - Short Rest",
         ),
         discord.SelectOption(
-            label="🔼  Advantage",      value="advantage",
-            description="Roll 2d20 - keep highest",
-        ),
-        discord.SelectOption(
-            label="🔽  Disadvantage",   value="disadvantage",
-            description="Roll 2d20 - keep lowest",
-        ),
-        discord.SelectOption(
-            label="🗡️  Damage Roll",    value="damage",
+            label="️  Damage Roll",    value="damage",
             description="Enter weapon / spell dice",
         ),
     ]
@@ -608,8 +586,9 @@ class CombatSavesSelect(discord.ui.Select):
             )
             return
 
+        adv_mode = getattr(self.view, "adv_mode", None)
         await interaction.response.defer(ephemeral=True)
-        result = resolve_roll(choice, self.char)
+        result = resolve_roll(choice, self.char, adv_mode)
         await _send_as_char(channel, self.char_key, result)
         try:
             await self.roll_interaction.edit_original_response(
@@ -643,8 +622,9 @@ class ChecksDiceSelect(discord.ui.Select):
             )
             return
 
+        adv_mode = getattr(self.view, "adv_mode", None)
         await interaction.response.defer(ephemeral=True)
-        result = resolve_roll(choice, self.char)
+        result = resolve_roll(choice, self.char, adv_mode)
         await _send_as_char(channel, self.char_key, result)
         try:
             await self.roll_interaction.edit_original_response(
@@ -654,11 +634,45 @@ class ChecksDiceSelect(discord.ui.Select):
             pass
 
 
+def _adv_label(char: dict, adv_mode) -> str:
+    base = f"*Rolling as **{char['name']}** — {char['cls']}...*"
+    if adv_mode == "advantage":
+        return base + "\n-# 🔼 Advantage active"
+    if adv_mode == "disadvantage":
+        return base + "\n-# 🔽 Disadvantage active"
+    return base
+
+
+class AdvToggleButton(discord.ui.Button):
+    def __init__(self, mode: str):
+        label = "🔼 Advantage" if mode == "advantage" else "🔽 Disadvantage"
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=2)
+        self.mode = mode
+
+    async def callback(self, interaction: discord.Interaction):
+        view: RollView = self.view
+        view.adv_mode = None if view.adv_mode == self.mode else self.mode
+        for item in view.children:
+            if isinstance(item, AdvToggleButton):
+                if view.adv_mode == item.mode:
+                    item.style = discord.ButtonStyle.success if item.mode == "advantage" else discord.ButtonStyle.danger
+                else:
+                    item.style = discord.ButtonStyle.secondary
+        await interaction.response.edit_message(
+            content=_adv_label(view.char, view.adv_mode),
+            view=view,
+        )
+
+
 class RollView(discord.ui.View):
     def __init__(self, char_key: str, char: dict, roll_interaction: discord.Interaction):
         super().__init__(timeout=90)
+        self.adv_mode: str | None = None
+        self.char = char
         self.add_item(CombatSavesSelect(char_key, char, roll_interaction))
         self.add_item(ChecksDiceSelect(char_key, char, roll_interaction))
+        self.add_item(AdvToggleButton("advantage"))
+        self.add_item(AdvToggleButton("disadvantage"))
 
     async def on_timeout(self):
         for item in self.children:
