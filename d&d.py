@@ -166,13 +166,18 @@ def _crit_tag(roll: int) -> str:
     if roll == 1:  return " 💀 **NAT 1**"
     return ""
 
+def _adv_suffix(adv_mode) -> str:
+    if adv_mode == "advantage":    return " *(w/Advantage)*"
+    if adv_mode == "disadvantage": return " *(w/Disadvantage)*"
+    return ""
+
 
 def fmt_ability_check(char: dict, stat: str, adv_mode=None) -> str:
     mod  = _mod(char[stat])
     roll, adv_note = _d20_with_mode(adv_mode)
     eq   = f"`{roll}`{adv_note}" + (f" {_fmt_mod(mod)}" if mod != 0 else "")
     return (
-        f"🎲 **{STAT_LABELS[stat]} Check**{_crit_tag(roll)}\n"
+        f"🎲 **{STAT_LABELS[stat]} Check**{_adv_suffix(adv_mode)}{_crit_tag(roll)}\n"
         f"╰ {eq} = **{roll + mod}**"
     )
 
@@ -194,7 +199,7 @@ def fmt_saving_throw(char: dict, stat: str, adv_mode=None) -> str:
         breakdown += f" *(prof +{PROF_BONUS})*"
 
     return (
-        f"🎲 **{STAT_LABELS[stat]} Save**{prof_tag}{_crit_tag(roll)}\n"
+        f"🎲 **{STAT_LABELS[stat]} Save**{_adv_suffix(adv_mode)}{prof_tag}{_crit_tag(roll)}\n"
         f"╰ {breakdown} = **{total}**"
     )
 
@@ -210,7 +215,7 @@ def fmt_attack_roll(char: dict, adv_mode=None) -> str:
     elif roll == 1: crit = " 💀 **CRITICAL MISS**"
 
     return (
-        f"🎲 **Attack Roll**{crit}\n"
+        f"🎲 **Attack Roll**{_adv_suffix(adv_mode)}{crit}\n"
         f"╰ `{roll}`{adv_note} {_fmt_mod(bonus)} *({STAT_ABBR[stat]} + Prof)* = **{total}**"
     )
 
@@ -220,7 +225,7 @@ def fmt_initiative(char: dict, adv_mode=None) -> str:
     roll, adv_note = _d20_with_mode(adv_mode)
     total = roll + mod
     return (
-        f"🎲 **Initiative**{_crit_tag(roll)}\n"
+        f"🎲 **Initiative**{_adv_suffix(adv_mode)}{_crit_tag(roll)}\n"
         f"╰ `{roll}`{adv_note} {_fmt_mod(mod)} *(DEX)* = **{total}**"
     )
 
@@ -240,7 +245,7 @@ def fmt_death_save(adv_mode=None) -> str:
         verdict = "❌ **Failure**"
         note    = "Fading fast..."
     return (
-        f"🎲 **Death Saving Throw**\n"
+        f"🎲 **Death Saving Throw**{_adv_suffix(adv_mode)}\n"
         f"╰ `{roll}`{adv_note} → {verdict}\n"
         f"  *{note}*"
     )
@@ -357,15 +362,22 @@ async def _get_char_webhook(channel: discord.TextChannel, char_key: str) -> disc
 
 
 async def _get_dm_webhook(channel: discord.TextChannel) -> discord.Webhook:
-    """Return (or create) a Dungeon Master webhook. No avatar stored — passed as URL at send time."""
+    """Return (or create) a Dungeon Master webhook with PFP_DM.png baked in as avatar."""
     cache_key = f"{channel.id}:dm"
     if cache_key in _webhook_cache:
         return _webhook_cache[cache_key]
+    pfp_path = PFP_DIR / "PFP_DM.png"
     for wh in await channel.webhooks():
         if wh.name == "DnD_DungeonMaster":
+            if wh.avatar is None and pfp_path.exists():
+                try:
+                    await wh.edit(avatar=pfp_path.read_bytes())
+                except Exception as e:
+                    print(f"[DnD] Could not update DM avatar: {e}")
             _webhook_cache[cache_key] = wh
             return wh
-    wh = await channel.create_webhook(name="DnD_DungeonMaster")
+    avatar_bytes = pfp_path.read_bytes() if pfp_path.exists() else None
+    wh = await channel.create_webhook(name="DnD_DungeonMaster", avatar=avatar_bytes)
     _webhook_cache[cache_key] = wh
     return wh
 
@@ -395,17 +407,15 @@ async def _send_as_char(
 
 async def _send_as_dm(
     channel: discord.abc.Messageable,
-    member:  discord.Member,
     content: str,
 ) -> None:
-    """Send as Dungeon Master. Works in both TextChannels and Threads."""
+    """Send as Dungeon Master using PFP_DM.png baked into the webhook."""
     wh_channel = channel.parent if isinstance(channel, discord.Thread) else channel
     if not isinstance(wh_channel, discord.TextChannel):
         return
     wh = await _get_dm_webhook(wh_channel)
     send_kw = dict(
         username="Dungeon Master",
-        avatar_url=member.display_avatar.url,  # URL string — no download, always current
         allowed_mentions=discord.AllowedMentions.none(),
     )
     if isinstance(channel, discord.Thread):
@@ -586,16 +596,16 @@ class CombatSavesSelect(discord.ui.Select):
             )
             return
 
-        adv_mode = getattr(self.view, "adv_mode", None)
-        await interaction.response.defer(ephemeral=True)
-        result = resolve_roll(choice, self.char, adv_mode)
-        await _send_as_char(channel, self.char_key, result)
-        try:
-            await self.roll_interaction.edit_original_response(
-                content="✅ Done! Check the channel.", view=None
-            )
-        except Exception:
-            pass
+        view: RollView = self.view
+        view.selected_roll = choice
+        for item in view.children:
+            if isinstance(item, RollConfirmButton):
+                item.disabled = False
+                break
+        await interaction.response.edit_message(
+            content=_roll_view_content(view.char, choice, view.adv_mode),
+            view=view,
+        )
 
 
 class ChecksDiceSelect(discord.ui.Select):
@@ -622,31 +632,67 @@ class ChecksDiceSelect(discord.ui.Select):
             )
             return
 
-        adv_mode = getattr(self.view, "adv_mode", None)
-        await interaction.response.defer(ephemeral=True)
-        result = resolve_roll(choice, self.char, adv_mode)
-        await _send_as_char(channel, self.char_key, result)
-        try:
-            await self.roll_interaction.edit_original_response(
-                content="✅ Done! Check the channel.", view=None
-            )
-        except Exception:
-            pass
+        view: RollView = self.view
+        view.selected_roll = choice
+        for item in view.children:
+            if isinstance(item, RollConfirmButton):
+                item.disabled = False
+                break
+        await interaction.response.edit_message(
+            content=_roll_view_content(view.char, choice, view.adv_mode),
+            view=view,
+        )
 
 
-def _adv_label(char: dict, adv_mode) -> str:
+def _choice_label(choice: str) -> str:
+    if choice.startswith("check_"): return f"{STAT_LABELS[choice[6:]]} Check"
+    if choice.startswith("save_"):  return f"{STAT_LABELS[choice[5:]]} Save"
+    if choice.startswith("die_"):   return f"d{choice[4:]}"
+    return {"attack": "Attack Roll", "initiative": "Initiative",
+            "death_save": "Death Save", "hit_die": "Hit Die"}.get(choice, choice)
+
+
+def _roll_view_content(char: dict, selected_roll, adv_mode) -> str:
     base = f"*Rolling as **{char['name']}** — {char['cls']}...*"
+    parts = []
+    if selected_roll:
+        parts.append(f"🎯 **{_choice_label(selected_roll)}**")
     if adv_mode == "advantage":
-        return base + "\n-# 🔼 Advantage active"
-    if adv_mode == "disadvantage":
-        return base + "\n-# 🔽 Disadvantage active"
+        parts.append("🔼 w/Advantage")
+    elif adv_mode == "disadvantage":
+        parts.append("🔽 w/Disadvantage")
+    if parts:
+        return base + "\n-# " + " • ".join(parts)
     return base
+
+
+class RollConfirmButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="🎲 ROLL!", style=discord.ButtonStyle.primary, row=2, disabled=True)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: RollView = self.view
+        choice   = view.selected_roll
+        if not choice:
+            await interaction.response.defer(ephemeral=True)
+            return
+        adv_mode = view.adv_mode
+        channel  = interaction.channel
+        result   = resolve_roll(choice, view.char, adv_mode)
+        # Reset selection — keep view alive for more rolls
+        view.selected_roll = None
+        self.disabled = True
+        await interaction.response.edit_message(
+            content=_roll_view_content(view.char, None, adv_mode),
+            view=view,
+        )
+        await _send_as_char(channel, view.char_key, result)
 
 
 class AdvToggleButton(discord.ui.Button):
     def __init__(self, mode: str):
-        label = "🔼 Advantage" if mode == "advantage" else "🔽 Disadvantage"
-        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=2)
+        label = "🔼 w/ Advantage?" if mode == "advantage" else "🔽 w/ Disadvantage?"
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=3)
         self.mode = mode
 
     async def callback(self, interaction: discord.Interaction):
@@ -659,7 +705,7 @@ class AdvToggleButton(discord.ui.Button):
                 else:
                     item.style = discord.ButtonStyle.secondary
         await interaction.response.edit_message(
-            content=_adv_label(view.char, view.adv_mode),
+            content=_roll_view_content(view.char, view.selected_roll, view.adv_mode),
             view=view,
         )
 
@@ -668,9 +714,13 @@ class RollView(discord.ui.View):
     def __init__(self, char_key: str, char: dict, roll_interaction: discord.Interaction):
         super().__init__(timeout=90)
         self.adv_mode: str | None = None
+        self.selected_roll: str | None = None
         self.char = char
+        self.char_key = char_key
+        self.roll_interaction = roll_interaction
         self.add_item(CombatSavesSelect(char_key, char, roll_interaction))
         self.add_item(ChecksDiceSelect(char_key, char, roll_interaction))
+        self.add_item(RollConfirmButton())
         self.add_item(AdvToggleButton("advantage"))
         self.add_item(AdvToggleButton("disadvantage"))
 
@@ -725,7 +775,7 @@ async def process_quote(message: discord.Message) -> bool:
     try:
         # Send FIRST (feels instant), then delete — mirrors April Fools behaviour
         if is_dm:
-            await _send_as_dm(message.channel, message.author, message.content)
+            await _send_as_dm(message.channel, message.content)
         else:
             await _send_as_char(message.channel, PLAYER_CHARS[uid], message.content)
         await message.delete()
