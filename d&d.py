@@ -58,6 +58,7 @@ CHARACTERS: dict[str, dict] = {
         "str": 5,  "dex": 15, "con": 15,
         "int": 18, "wis": 11, "cha": 14,
         "save_profs":  {"int", "wis"},
+        "skill_profs": {"arcana", "history"},
         "attack_stat": "int",
         "speed":       30,
     },
@@ -71,6 +72,7 @@ CHARACTERS: dict[str, dict] = {
         "str": 14, "dex": 11, "con": 15,
         "int": 13, "wis": 12, "cha": 12,
         "save_profs":  {"str", "con"},
+        "skill_profs": {"athletics", "perception"},
         "attack_stat": "str",
         "speed":       30,
     },
@@ -84,6 +86,7 @@ CHARACTERS: dict[str, dict] = {
         "str": 12, "dex": 18, "con": 10,
         "int": 14, "wis": 15, "cha": 13,
         "save_profs":  {"str", "dex"},
+        "skill_profs": {"nature", "perception", "stealth", "survival"},
         "attack_stat": "dex",
         "speed":       30,
     },
@@ -97,6 +100,7 @@ CHARACTERS: dict[str, dict] = {
         "str": 15, "dex": 13, "con": 14,
         "int": 4,  "wis": 12, "cha": 11,
         "save_profs":  {"str", "con"},
+        "skill_profs": {"athletics", "intimidation", "stealth"},
         "attack_stat": "str",
         "speed":       30,
     },
@@ -110,6 +114,7 @@ CHARACTERS: dict[str, dict] = {
         "str": 12, "dex": 16, "con": 15,
         "int": 13, "wis": 18, "cha": 8,
         "save_profs":  {"int", "wis"},
+        "skill_profs": {"animal_handling", "nature", "perception", "survival"},
         "attack_stat": "wis",
         "speed":       35,
     },
@@ -123,6 +128,7 @@ CHARACTERS: dict[str, dict] = {
         "str": 15, "dex": 12, "con": 13,
         "int": 13, "wis": 16, "cha": 16,
         "save_profs":  {"wis", "cha"},
+        "skill_profs": {"insight", "persuasion"},
         "attack_stat": "str",
         "speed":       30,
     },
@@ -135,6 +141,29 @@ STAT_LABELS = {
 STAT_ABBR = {
     "str": "STR", "dex": "DEX", "con": "CON",
     "int": "INT", "wis": "WIS", "cha": "CHA",
+}
+
+# Skills: key → (base_stat, display_label)
+# ★ marks show in the roll dropdowns for proficient skills per character.
+SKILLS: dict[str, tuple[str, str]] = {
+    "athletics":       ("str", "Athletics"),
+    "acrobatics":      ("dex", "Acrobatics"),
+    "sleight_of_hand": ("dex", "Sleight of Hand"),
+    "stealth":         ("dex", "Stealth"),
+    "arcana":          ("int", "Arcana"),
+    "history":         ("int", "History"),
+    "investigation":   ("int", "Investigation"),
+    "nature":          ("int", "Nature"),
+    "religion":        ("int", "Religion"),
+    "animal_handling": ("wis", "Animal Handling"),
+    "insight":         ("wis", "Insight"),
+    "medicine":        ("wis", "Medicine"),
+    "perception":      ("wis", "Perception"),
+    "survival":        ("wis", "Survival"),
+    "deception":       ("cha", "Deception"),
+    "intimidation":    ("cha", "Intimidation"),
+    "performance":     ("cha", "Performance"),
+    "persuasion":      ("cha", "Persuasion"),
 }
 
 # ======================== OUTPUT FORMATTING ========================
@@ -179,6 +208,25 @@ def fmt_ability_check(char: dict, stat: str, adv_mode=None) -> str:
     return (
         f"🎲 **{STAT_LABELS[stat]} Check**{_adv_suffix(adv_mode)}{_crit_tag(roll)}\n"
         f"╰ {eq} = **{roll + mod}**"
+    )
+
+
+def fmt_skill_check(char: dict, skill_key: str, adv_mode=None) -> str:
+    stat, label = SKILLS[skill_key]
+    mod      = _mod(char[stat])
+    has_prof = skill_key in char.get("skill_profs", set())
+    bonus    = mod + (PROF_BONUS if has_prof else 0)
+    roll, adv_note = _d20_with_mode(adv_mode)
+    total    = roll + bonus
+    breakdown = f"`{roll}`{adv_note}" + (f" {_fmt_mod(bonus)}" if bonus != 0 else "")
+    prof_tag  = " *(proficient)*" if has_prof else ""
+    if has_prof and mod != 0:
+        breakdown += f" *(mod {_fmt_mod(mod)}, prof +{PROF_BONUS})*"
+    elif has_prof:
+        breakdown += f" *(prof +{PROF_BONUS})*"
+    return (
+        f"🎲 **{label} Check**{_adv_suffix(adv_mode)}{prof_tag}{_crit_tag(roll)}\n"
+        f"╰ {breakdown} = **{total}**"
     )
 
 
@@ -313,6 +361,8 @@ def resolve_roll(choice: str, char: dict, adv_mode=None) -> str:
     """Map a select menu value to a formatted roll string."""
     if choice.startswith("check_"):
         return fmt_ability_check(char, choice[len("check_"):], adv_mode)
+    if choice.startswith("skill_"):
+        return fmt_skill_check(char, choice[len("skill_"):], adv_mode)
     if choice.startswith("save_"):
         return fmt_saving_throw(char, choice[len("save_"):], adv_mode)
     if choice.startswith("die_"):
@@ -644,9 +694,51 @@ class ChecksDiceSelect(discord.ui.Select):
         )
 
 
+def _skill_options(char: dict) -> list[discord.SelectOption]:
+    _stat_emoji = {"str": "💪", "dex": "🤸", "int": "📚", "wis": "👁️", "cha": "💬"}
+    options = []
+    for skill_key, (stat, label) in SKILLS.items():
+        mod      = _mod(char[stat])
+        has_prof = skill_key in char.get("skill_profs", set())
+        bonus    = mod + (PROF_BONUS if has_prof else 0)
+        star     = " ★" if has_prof else ""
+        options.append(discord.SelectOption(
+            label=f"{_stat_emoji.get(stat, '🎲')}  {label}{star}",
+            value=f"skill_{skill_key}",
+            description=f"{STAT_ABBR[stat]}  d20 {_fmt_mod(bonus)}" + (" (proficient)" if has_prof else ""),
+        ))
+    return options
+
+
+class SkillsSelect(discord.ui.Select):
+    def __init__(self, char_key: str, char: dict, roll_interaction: discord.Interaction):
+        self.char_key         = char_key
+        self.char             = char
+        self.roll_interaction = roll_interaction
+        super().__init__(
+            placeholder="🧠  Skill Checks",
+            options=_skill_options(char),
+            row=2,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        choice = self.values[0]
+        view: RollView = self.view
+        view.selected_roll = choice
+        for item in view.children:
+            if isinstance(item, RollConfirmButton):
+                item.disabled = False
+                break
+        await interaction.response.edit_message(
+            content=_roll_view_content(view.char, choice, view.adv_mode),
+            view=view,
+        )
+
+
 def _choice_label(choice: str) -> str:
     if choice.startswith("check_"): return f"{STAT_LABELS[choice[6:]]} Check"
     if choice.startswith("save_"):  return f"{STAT_LABELS[choice[5:]]} Save"
+    if choice.startswith("skill_"): return f"{SKILLS[choice[6:]][1]} Check"
     if choice.startswith("die_"):   return f"d{choice[4:]}"
     return {"attack": "Attack Roll", "initiative": "Initiative",
             "death_save": "Death Save", "hit_die": "Hit Die"}.get(choice, choice)
@@ -668,7 +760,7 @@ def _roll_view_content(char: dict, selected_roll, adv_mode) -> str:
 
 class RollConfirmButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="🎲 ROLL!", style=discord.ButtonStyle.primary, row=2, disabled=True)
+        super().__init__(label="🎲 ROLL!", style=discord.ButtonStyle.primary, row=3, disabled=True)
 
     async def callback(self, interaction: discord.Interaction):
         view: RollView = self.view
@@ -692,7 +784,7 @@ class RollConfirmButton(discord.ui.Button):
 class AdvToggleButton(discord.ui.Button):
     def __init__(self, mode: str):
         label = "🔼 w/ Advantage?" if mode == "advantage" else "🔽 w/ Disadvantage?"
-        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=3)
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=4)
         self.mode = mode
 
     async def callback(self, interaction: discord.Interaction):
@@ -720,6 +812,7 @@ class RollView(discord.ui.View):
         self.roll_interaction = roll_interaction
         self.add_item(CombatSavesSelect(char_key, char, roll_interaction))
         self.add_item(ChecksDiceSelect(char_key, char, roll_interaction))
+        self.add_item(SkillsSelect(char_key, char, roll_interaction))
         self.add_item(RollConfirmButton())
         self.add_item(AdvToggleButton("advantage"))
         self.add_item(AdvToggleButton("disadvantage"))
@@ -727,6 +820,31 @@ class RollView(discord.ui.View):
     async def on_timeout(self):
         for item in self.children:
             item.disabled = True
+
+
+# ======================== DM CHARACTER PICKER ========================
+
+class CharPickerButton(discord.ui.Button):
+    def __init__(self, char_key: str, char: dict, roll_interaction: discord.Interaction):
+        super().__init__(label=char["name"], style=discord.ButtonStyle.secondary)
+        self.char_key         = char_key
+        self.char             = char
+        self.roll_interaction = roll_interaction
+
+    async def callback(self, interaction: discord.Interaction):
+        view = RollView(self.char_key, self.char, self.roll_interaction)
+        await interaction.response.edit_message(
+            content=f"*Rolling as **{self.char['name']}** — {self.char['cls']}...*",
+            view=view,
+        )
+
+
+class CharPickerView(discord.ui.View):
+    def __init__(self, roll_interaction: discord.Interaction):
+        super().__init__(timeout=60)
+        for char_key, char in CHARACTERS.items():
+            self.add_item(CharPickerButton(char_key, char, roll_interaction))
+
 
 # ======================== QUOTE AUTO-SUDO ========================
 

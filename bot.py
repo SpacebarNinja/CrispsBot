@@ -1200,7 +1200,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.2.5"
+BOT_VERSION = "v4.2.6"
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
@@ -1223,7 +1223,18 @@ async def sync_cmd(interaction: discord.Interaction):
 
 @bot.tree.command(name="roll", description="Roll dice as your D&D character 🎲")
 async def roll_cmd(interaction: discord.Interaction):
-    uid      = str(interaction.user.id)
+    uid = str(interaction.user.id)
+
+    # DM gets a character picker so they can roll as any character (debug)
+    if uid == dnd.DM_USER_ID:
+        view = dnd.CharPickerView(interaction)
+        await interaction.response.send_message(
+            "🎲 *Dungeon Master — choose a character to roll as:*",
+            view=view,
+            ephemeral=True,
+        )
+        return
+
     char_key = dnd.PLAYER_CHARS.get(uid)
     if not char_key:
         await interaction.response.send_message(
