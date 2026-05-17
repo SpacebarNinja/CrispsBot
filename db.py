@@ -77,8 +77,10 @@ class TursoConnection:
     
     async def execute(self, sql, params=None):
         METRICS["queries"] += 1  # Track query count
+        # libsql_experimental requires a tuple, not a list
+        _params = tuple(params) if params is not None else ()
         def _exec():
-            return self._conn.execute(sql, params or [])
+            return self._conn.execute(sql, _params)
         async with self._lock:
             result = await asyncio.to_thread(_exec)
         return TursoCursor(result)
