@@ -373,12 +373,13 @@ def fmt_raw_die(sides: int) -> str:
     )
 
 
-def fmt_damage_roll(formula: str, rolls: list[int], modifier: int, total: int) -> str:
-    roll_str = " + ".join(f"`{r}`" for r in rolls)
-    mod_str  = f" {_fmt_mod(modifier)}" if modifier != 0 else ""
+def fmt_damage_roll(formula: str, rolls: list[int], modifier: int, total: int, stat_mod: int = 0, stat_label: str = "") -> str:
+    roll_str  = " + ".join(f"`{r}`" for r in rolls)
+    mod_str   = f" {_fmt_mod(modifier)}" if modifier != 0 else ""
+    stat_str  = f" {_fmt_mod(stat_mod)} *({stat_label})*" if stat_mod != 0 else ""
     return (
         f"🎲 **Damage** `{formula}`\n"
-        f"╰ {roll_str}{mod_str} = **{total} dmg**"
+        f"╰ {roll_str}{mod_str}{stat_str} = **{total} dmg**"
     )
 
 
@@ -556,7 +557,7 @@ async def _send_as_dm(
 class DamageModal(discord.ui.Modal, title="Damage Roll"):
     formula = discord.ui.TextInput(
         label="Dice Formula",
-        placeholder="e.g.  2d6+3  |  1d8  |  d4-1",
+        placeholder="e.g.  2d6  |  1d8  |  d4  (atk modifier auto-added)",
         max_length=30,
     )
 
@@ -569,14 +570,17 @@ class DamageModal(discord.ui.Modal, title="Damage Roll"):
         parsed = parse_dice(self.formula.value)
         if not parsed:
             await interaction.response.send_message(
-                "❌ Invalid formula - try something like `2d6+3` or `d8`.",
+                "❌ Invalid formula - try something like `2d6` or `d8`.",
                 ephemeral=True,
             )
             return
         count, sides, modifier = parsed
-        rolls = roll_dice(count, sides)
-        total = sum(rolls) + modifier
-        text  = fmt_damage_roll(self.formula.value.strip(), rolls, modifier, total)
+        char     = CHARACTERS[self.char_key]
+        stat     = char["attack_stat"]
+        stat_mod = _mod(char[stat])
+        rolls    = roll_dice(count, sides)
+        total    = sum(rolls) + modifier + stat_mod
+        text     = fmt_damage_roll(self.formula.value.strip(), rolls, modifier, total, stat_mod, STAT_ABBR[stat])
 
         await interaction.response.defer(ephemeral=True)
         await _send_as_char(interaction.channel, self.char_key, text)
