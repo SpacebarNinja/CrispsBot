@@ -554,6 +554,124 @@ async def _send_as_dm(
 
 # ======================== MODALS ========================
 
+# ── DM-specific modals (no character stat auto-apply) ──
+
+class DMAttackModal(discord.ui.Modal, title="DM Attack Roll"):
+    bonus = discord.ui.TextInput(
+        label="Attack Bonus",
+        placeholder="e.g.  +5  |  -1  |  0  (leave blank for flat d20)",
+        required=False,
+        max_length=6,
+    )
+
+    def __init__(self, roll_interaction: discord.Interaction, adv_mode=None):
+        super().__init__()
+        self.roll_interaction = roll_interaction
+        self.adv_mode         = adv_mode
+
+    async def on_submit(self, interaction: discord.Interaction):
+        raw = self.bonus.value.strip().lstrip("+") or "0"
+        try:
+            mod = int(raw)
+        except ValueError:
+            await interaction.response.send_message("❌ Invalid bonus — use a number like `5` or `-1`.", ephemeral=True)
+            return
+        roll, adv_note = _d20_with_mode(self.adv_mode)
+        total = roll + mod
+        crit  = ""
+        if roll == 20: crit = " ✨ **CRITICAL HIT!**"
+        elif roll == 1: crit = " 💀 **CRITICAL MISS**"
+        mod_str   = f" {_fmt_mod(mod)}" if mod != 0 else ""
+        adv_str   = _adv_suffix(self.adv_mode)
+        text = (
+            f"🎲 **Attack Roll**{adv_str}{crit}\n"
+            f"╰ `{roll}`{adv_note}{mod_str} = **{total}**"
+        )
+        await interaction.response.defer(ephemeral=True)
+        await _send_as_dm(interaction.channel, text)
+        try:
+            await self.roll_interaction.edit_original_response(content="✅ Done! Check the channel.", view=None)
+        except Exception:
+            pass
+
+
+class DMDiceModal(discord.ui.Modal, title="DM Dice Roll"):
+    formula = discord.ui.TextInput(
+        label="Dice Formula",
+        placeholder="e.g.  2d8+3  |  d6  |  3d4-1",
+        max_length=30,
+    )
+
+    def __init__(self, roll_interaction: discord.Interaction, label: str = "Damage"):
+        super().__init__(title=f"DM {label} Roll")
+        self.roll_interaction = roll_interaction
+        self.label            = label
+
+    async def on_submit(self, interaction: discord.Interaction):
+        parsed = parse_dice(self.formula.value)
+        if not parsed:
+            await interaction.response.send_message("❌ Invalid formula — try `2d6+3` or `d8`.", ephemeral=True)
+            return
+        count, sides, modifier = parsed
+        rolls = roll_dice(count, sides)
+        total = sum(rolls) + modifier
+        if self.label == "Damage":
+            text = fmt_damage_roll(self.formula.value.strip(), rolls, modifier, total)
+        else:
+            text = fmt_custom_roll(self.formula.value.strip(), rolls, modifier, total)
+        await interaction.response.defer(ephemeral=True)
+        await _send_as_dm(interaction.channel, text)
+        try:
+            await self.roll_interaction.edit_original_response(content="✅ Done! Check the channel.", view=None)
+        except Exception:
+            pass
+
+
+# ── DM Roll View ──
+
+class DMRollAdvButton(discord.ui.Button):
+    def __init__(self, mode: str):
+        label = "🔼 w/ Advantage?" if mode == "advantage" else "🔽 w/ Disadvantage?"
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=1)
+        self.mode = mode
+
+    async def callback(self, interaction: discord.Interaction):
+        view: DMRollView = self.view
+        view.adv_mode = None if view.adv_mode == self.mode else self.mode
+        for item in view.children:
+            if isinstance(item, DMRollAdvButton):
+                if view.adv_mode == item.mode:
+                    item.style = discord.ButtonStyle.success if item.mode == "advantage" else discord.ButtonStyle.danger
+                else:
+                    item.style = discord.ButtonStyle.secondary
+        await interaction.response.edit_message(view=view)
+
+
+class DMRollView(discord.ui.View):
+    def __init__(self, roll_interaction: discord.Interaction):
+        super().__init__(timeout=90)
+        self.adv_mode         = None
+        self.roll_interaction = roll_interaction
+
+    @discord.ui.button(label="⚔️ Attack Roll", style=discord.ButtonStyle.primary, row=0)
+    async def attack_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(DMAttackModal(self.roll_interaction, self.adv_mode))
+
+    @discord.ui.button(label="🗡️ Damage Roll", style=discord.ButtonStyle.secondary, row=0)
+    async def damage_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(DMDiceModal(self.roll_interaction, "Damage"))
+
+    @discord.ui.button(label="✏️ Custom Roll", style=discord.ButtonStyle.secondary, row=0)
+    async def custom_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(DMDiceModal(self.roll_interaction, "Custom"))
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
+# ── Player character modals ──
+
 class DamageModal(discord.ui.Modal, title="Damage Roll"):
     formula = discord.ui.TextInput(
         label="Dice Formula",
@@ -945,6 +1063,22 @@ class CharPickerView(discord.ui.View):
         super().__init__(timeout=60)
         for char_key, char in CHARACTERS.items():
             self.add_item(CharPickerButton(char_key, char, roll_interaction))
+        # DM-own roll button (row 1 so it doesn't crowd the character buttons)
+        dm_btn = discord.ui.Button(
+            label="🎲 Roll as DM",
+            style=discord.ButtonStyle.danger,
+            row=1,
+        )
+        async def _dm_roll(interaction: discord.Interaction, _btn=dm_btn):
+            view = DMRollView(roll_interaction)
+            view.add_item(DMRollAdvButton("advantage"))
+            view.add_item(DMRollAdvButton("disadvantage"))
+            await interaction.response.edit_message(
+                content="*Dungeon Master — choose a roll type:*",
+                view=view,
+            )
+        dm_btn.callback = _dm_roll
+        self.add_item(dm_btn)
 
 
 # ======================== QUOTE AUTO-SUDO ========================
