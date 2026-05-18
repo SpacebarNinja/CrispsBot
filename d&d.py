@@ -1116,8 +1116,9 @@ async def process_quote(message: discord.Message) -> bool:
     """
     if message.channel.id != QUOTE_CHANNEL_ID:
         return False
-    # Strip Discord's small-text prefix (-# ) before checking for a quote starter
-    _stripped = re.sub(r"^-#\s*", "", message.content) if message.content else ""
+    # Strip any Discord block prefix (# / ## / ### / -#) and inline formatting (* / ** / _)
+    # before checking for a quote starter, so things like `# *"text"*` trigger correctly.
+    _stripped = re.sub(r"^(?:(?:-#|#{1,3})\s+)?(?:\*{1,3}|_{1,3})?", "", message.content) if message.content else ""
     if not (_stripped and _stripped.startswith(_QUOTE_STARTERS)):
         return False
     if not isinstance(message.channel, (discord.TextChannel, discord.Thread)):
