@@ -1203,12 +1203,45 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.3.1"
+BOT_VERSION = "v4.3.2"
+
+VC_CHANNEL_ID = 1446064348073168922
 
 
 @bot.tree.command(name="version", description="Check bot version (debug)")
 async def version_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(f"Bot version: **{BOT_VERSION}**", ephemeral=True)
+
+
+@bot.tree.command(name="joinvc", description="Make the bot join the 24/7 VC (admin)")
+@app_commands.default_permissions(administrator=True)
+async def joinvc_cmd(interaction: discord.Interaction):
+    channel = bot.get_channel(VC_CHANNEL_ID)
+    if channel is None or not isinstance(channel, discord.VoiceChannel):
+        await interaction.response.send_message("❌ VC channel not found.", ephemeral=True)
+        return
+    # Already connected to that channel
+    if interaction.guild.voice_client and interaction.guild.voice_client.channel.id == VC_CHANNEL_ID:
+        await interaction.response.send_message("✅ Already connected to that VC.", ephemeral=True)
+        return
+    # Move if connected elsewhere
+    if interaction.guild.voice_client:
+        await interaction.guild.voice_client.move_to(channel)
+    else:
+        await channel.connect()
+    await interaction.response.send_message(f"✅ Joined **{channel.name}**!", ephemeral=True)
+
+
+@bot.tree.command(name="leavevc", description="Make the bot leave its current VC (admin)")
+@app_commands.default_permissions(administrator=True)
+async def leavevc_cmd(interaction: discord.Interaction):
+    vc = interaction.guild.voice_client
+    if vc is None:
+        await interaction.response.send_message("❌ Not currently in any VC.", ephemeral=True)
+        return
+    channel_name = vc.channel.name
+    await vc.disconnect()
+    await interaction.response.send_message(f"✅ Left **{channel_name}**.", ephemeral=True)
 
 
 @bot.tree.command(name="sync", description="Force re-sync slash commands to this server (admin)")
