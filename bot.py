@@ -1217,31 +1217,39 @@ async def version_cmd(interaction: discord.Interaction):
 @app_commands.default_permissions(administrator=True)
 async def joinvc_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    channel = bot.get_channel(VC_CHANNEL_ID)
-    if channel is None or not isinstance(channel, discord.VoiceChannel):
-        await interaction.followup.send("❌ VC channel not found.", ephemeral=True)
-        return
-    if interaction.guild.voice_client and interaction.guild.voice_client.channel.id == VC_CHANNEL_ID:
-        await interaction.followup.send("✅ Already connected to that VC.", ephemeral=True)
-        return
-    if interaction.guild.voice_client:
-        await interaction.guild.voice_client.move_to(channel)
-    else:
-        await channel.connect()
-    await interaction.followup.send(f"✅ Joined **{channel.name}**!", ephemeral=True)
+    try:
+        channel = bot.get_channel(VC_CHANNEL_ID)
+        if channel is None or not isinstance(channel, discord.VoiceChannel):
+            await interaction.followup.send("❌ VC channel not found.", ephemeral=True)
+            return
+        if interaction.guild.voice_client and interaction.guild.voice_client.channel.id == VC_CHANNEL_ID:
+            await interaction.followup.send("✅ Already connected to that VC.", ephemeral=True)
+            return
+        if interaction.guild.voice_client:
+            await asyncio.wait_for(interaction.guild.voice_client.move_to(channel), timeout=10)
+        else:
+            await asyncio.wait_for(channel.connect(), timeout=10)
+        await interaction.followup.send(f"✅ Joined **{channel.name}**!", ephemeral=True)
+    except asyncio.TimeoutError:
+        await interaction.followup.send("❌ Timed out trying to connect to VC. Check bot permissions.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Failed to join VC: `{e}`", ephemeral=True)
 
 
 @bot.tree.command(name="leavevc", description="Make the bot leave its current VC (admin)")
 @app_commands.default_permissions(administrator=True)
 async def leavevc_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    vc = interaction.guild.voice_client
-    if vc is None:
-        await interaction.followup.send("❌ Not currently in any VC.", ephemeral=True)
-        return
-    channel_name = vc.channel.name
-    await vc.disconnect()
-    await interaction.followup.send(f"✅ Left **{channel_name}**.", ephemeral=True)
+    try:
+        vc = interaction.guild.voice_client
+        if vc is None:
+            await interaction.followup.send("❌ Not currently in any VC.", ephemeral=True)
+            return
+        channel_name = vc.channel.name
+        await vc.disconnect()
+        await interaction.followup.send(f"✅ Left **{channel_name}**.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Failed to leave VC: `{e}`", ephemeral=True)
 
 
 @bot.tree.command(name="sync", description="Force re-sync slash commands to this server (admin)")
