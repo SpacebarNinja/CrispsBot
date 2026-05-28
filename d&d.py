@@ -18,8 +18,8 @@ from typing import Optional
 
 # ======================== CONFIGURATION ========================
 
-# Channel where messages starting with " auto-sudo as the player's character
-QUOTE_CHANNEL_ID = 1505272854877306970
+# Guild where messages starting with " auto-sudo as the player's character
+QUOTE_GUILD_ID = 1499581665171734658
 
 # Discord user ID of the Dungeon Master
 DM_USER_ID = "779245588596129812"
@@ -1139,23 +1139,23 @@ _QUOTE_STARTERS = ('"', '\u201c', '\u201d', '\u00ab', '\u00bb')
 
 
 async def warm_webhooks(bot) -> None:
-    """Pre-fetch / create all character + DM webhooks for the quote channel.
-    Called from on_ready so the first quoted message hits a warm cache."""
+    """Pre-fetch / create all character + DM webhooks for every text channel in the
+    quote guild.  Called from on_ready so the first quoted message hits a warm cache."""
     unique_chars = set(PLAYER_CHARS.values())
-    for guild in bot.guilds:
-        channel = guild.get_channel(QUOTE_CHANNEL_ID)
-        if not isinstance(channel, discord.TextChannel):
-            continue
+    guild = bot.get_guild(QUOTE_GUILD_ID)
+    if guild is None:
+        return
+    for channel in guild.text_channels:
         for char_key in unique_chars:
             if char_key in CHARACTERS:
                 try:
                     await _get_char_webhook(channel, char_key)
                 except Exception as e:
-                    print(f"[DnD] Pre-warm {char_key} in {guild.name}: {e}")
+                    print(f"[DnD] Pre-warm {char_key} #{channel.name}: {e}")
         try:
             await _get_dm_webhook(channel)
         except Exception as e:
-            print(f"[DnD] Pre-warm DM in {guild.name}: {e}")
+            print(f"[DnD] Pre-warm DM #{channel.name}: {e}")
 
 
 async def process_quote(message: discord.Message) -> bool:
@@ -1166,7 +1166,7 @@ async def process_quote(message: discord.Message) -> bool:
     A quote starter is always required — attachments alone do NOT trigger roleplay.
     Returns True if handled (caller should skip further processing).
     """
-    if message.channel.id != QUOTE_CHANNEL_ID:
+    if not message.guild or message.guild.id != QUOTE_GUILD_ID:
         return False
     # Strip any Discord block prefix (# / ## / ### / -#) and inline formatting (* / ** / _)
     # before checking for a quote starter, so things like `# *"text"*` trigger correctly.
