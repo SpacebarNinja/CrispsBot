@@ -18,8 +18,8 @@ from typing import Optional
 
 # ======================== CONFIGURATION ========================
 
-# Guild where messages starting with " auto-sudo as the player's character
-QUOTE_GUILD_ID = 1499581665171734658
+# Category where messages starting with " auto-sudo as the player's character
+QUOTE_CATEGORY_ID = 1499581665171734658
 
 # Discord user ID of the Dungeon Master
 DM_USER_ID = "779245588596129812"
@@ -1140,12 +1140,12 @@ _QUOTE_STARTERS = ('"', '\u201c', '\u201d', '\u00ab', '\u00bb')
 
 async def warm_webhooks(bot) -> None:
     """Pre-fetch / create all character + DM webhooks for every text channel in the
-    quote guild.  Called from on_ready so the first quoted message hits a warm cache."""
+    quote category.  Called from on_ready so the first quoted message hits a warm cache."""
     unique_chars = set(PLAYER_CHARS.values())
-    guild = bot.get_guild(QUOTE_GUILD_ID)
-    if guild is None:
-        return
-    for channel in guild.text_channels:
+    for guild in bot.guilds:
+        for channel in guild.text_channels:
+            if channel.category_id != QUOTE_CATEGORY_ID:
+                continue
         for char_key in unique_chars:
             if char_key in CHARACTERS:
                 try:
@@ -1166,7 +1166,7 @@ async def process_quote(message: discord.Message) -> bool:
     A quote starter is always required — attachments alone do NOT trigger roleplay.
     Returns True if handled (caller should skip further processing).
     """
-    if not message.guild or message.guild.id != QUOTE_GUILD_ID:
+    if not message.guild or getattr(message.channel, 'category_id', None) != QUOTE_CATEGORY_ID:
         return False
     # Strip any Discord block prefix (# / ## / ### / -#) and inline formatting (* / ** / _)
     # before checking for a quote starter, so things like `# *"text"*` trigger correctly.
