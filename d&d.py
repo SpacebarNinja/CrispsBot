@@ -64,9 +64,9 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "int",
         "speed":       30,
         "weapons": [
-            {"name": "Fire Bolt",      "emoji": "🔥", "stat": "int", "extra": 0, "desc": "Ranged spell cantrip, 1d10 fire"},
-            {"name": "Shocking Grasp", "emoji": "⚡", "stat": "int", "extra": 0, "desc": "Melee spell cantrip, 1d8 lightning"},
-            {"name": "Quarterstaff",   "emoji": "🪵", "stat": "str", "extra": 0, "desc": "Melee, 1d6 bludgeoning"},
+            {"name": "Fire Bolt",    "emoji": "🔥", "stat": "int", "extra": -1, "desc": "Ranged spell, 1d10 fire"},
+            {"name": "Dagger",       "emoji": "🗡️",  "stat": "int", "extra": -2, "desc": "Ranged/Melee, 1d4+2"},
+            {"name": "Quarterstaff", "emoji": "🪵", "stat": "str", "extra": -2, "desc": "Melee, 1d6-3 / 1d8-3"},
         ],
     },
     "isaiah": {
@@ -84,8 +84,8 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "str",
         "speed":       30,
         "weapons": [
-            {"name": "Longsword",      "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8 slashing"},
-            {"name": "Light Crossbow", "emoji": "🎯", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8 piercing"},
+            {"name": "Longsword",      "emoji": "⚔️",  "stat": "str", "extra": -2, "desc": "Melee, 1d8+2 / 1d10+2"},
+            {"name": "Light Crossbow", "emoji": "🎯", "stat": "dex", "extra": +2, "desc": "Ranged, 1d8"},
             {"name": "Vampiric Bite",  "emoji": "🧛", "stat": "str", "extra": 0, "desc": "Unarmed, heals prof on hit"},
         ],
     },
@@ -104,9 +104,9 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "dex",
         "speed":       30,
         "weapons": [
-            {"name": "Longbow",    "emoji": "🏹", "stat": "dex", "extra": 2, "desc": "Ranged, 1d8 piercing (+2 Archery)"},
-            {"name": "Shortsword", "emoji": "🗡️",  "stat": "dex", "extra": 0, "desc": "Melee finesse, 1d6 piercing"},
-            {"name": "Talons",     "emoji": "🦅", "stat": "dex", "extra": 0, "desc": "Natural unarmed, 1d6 slashing"},
+            {"name": "Longbow",    "emoji": "🏹", "stat": "dex", "extra": 2, "desc": "Ranged, 1d8+4"},
+            {"name": "Shortsword", "emoji": "🗡️",  "stat": "dex", "extra": 2, "desc": "Melee, 1d6+4"},
+            {"name": "Talons",     "emoji": "🦅", "stat": "dex", "extra": 0, "desc": "Natural, 1d6 slashing"},
         ],
     },
     "bablino": {
@@ -124,9 +124,9 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "str",
         "speed":       30,
         "weapons": [
-            {"name": "Greataxe", "emoji": "🪓", "stat": "str", "extra": 0, "desc": "Melee, 1d12 slashing"},
-            {"name": "Handaxe",  "emoji": "🔪", "stat": "str", "extra": 0, "desc": "Melee / thrown, 1d6 slashing"},
-            {"name": "Javelin",  "emoji": "🪃", "stat": "str", "extra": 0, "desc": "Thrown / melee, 1d6 piercing"},
+            {"name": "Greataxe", "emoji": "🪓", "stat": "str", "extra": 2, "desc": "Melee, 1d12+2"},
+            {"name": "Handaxe",  "emoji": "🔪", "stat": "str", "extra": 2, "desc": "Melee, 1d6+2"},
+            {"name": "Javelin",  "emoji": "🪃", "stat": "str", "extra": 2, "desc": "Thrown, 1d6+2"},
         ],
     },
     "faye": {
@@ -144,8 +144,10 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "wis",
         "speed":       35,
         "weapons": [
-            {"name": "Shillelagh (Staff)", "emoji": "🌿", "stat": "wis", "extra": 0, "desc": "Melee cantrip, 1d8 bludgeoning"},
-            {"name": "Scimitar",           "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d6 slashing"},
+            {"name": "Thorn Whip",    "emoji": "🧶", "stat": "wis", "extra": 2, "desc": "Melee spell, 1d6"},
+            {"name": "Shillelagh",    "emoji": "🌿", "stat": "wis", "extra": 2, "desc": "Melee spell, 1d8+4"},
+            {"name": "Scimitar",      "emoji": "⚔️",  "stat": "str", "extra": 2, "desc": "Melee, 1d6+3"},
+            {"name": "Quarterstaff",  "emoji": "🪵", "stat": "str", "extra": 2, "desc": "Melee, 1d6+1 / 1d8+1"},
         ],
     },
     "steria": {
@@ -163,8 +165,8 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "str",
         "speed":       30,
         "weapons": [
-            {"name": "Longsword", "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8 slashing"},
-            {"name": "Javelin",   "emoji": "🪃", "stat": "str", "extra": 0, "desc": "Thrown / melee, 1d6 piercing"},
+            {"name": "Longsword", "emoji": "⚔️",  "stat": "str", "extra": 2, "desc": "Melee, 1d8+2 / 1d10+2"},
+            {"name": "Javelin",   "emoji": "🪃", "stat": "str", "extra": 2, "desc": "Thrown, 1d6+2"},
         ],
     },
 }
