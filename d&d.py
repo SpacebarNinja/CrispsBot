@@ -173,6 +173,27 @@ SKILLS: dict[str, tuple[str, str]] = {
     "persuasion":      ("cha", "Persuasion"),
 }
 
+SKILL_DESCS: dict[str, str] = {
+    "athletics":       "Climb, swim, jump, grapple",
+    "acrobatics":      "Balance, tumble, dodge",
+    "sleight_of_hand": "Pickpocket, conceal, trick",
+    "stealth":         "Move unseen and unheard",
+    "arcana":          "Recall magic, spells, planes",
+    "history":         "Recall lore, events, lineages",
+    "investigation":   "Search, deduce, examine clues",
+    "nature":          "Know flora, fauna, weather",
+    "religion":        "Know gods, rites, undead",
+    "animal_handling": "Calm, train, read animals",
+    "insight":         "Read intentions, detect lies",
+    "medicine":        "Stabilize, diagnose, treat wounds",
+    "perception":      "Spot, hear, sense threats",
+    "survival":        "Track, forage, navigate wilderness",
+    "deception":       "Convincingly lie, bluff, misdirect",
+    "intimidation":    "Threaten, coerce, unsettle",
+    "performance":     "Entertain, sing, act, play",
+    "persuasion":      "Convince through reason or charm",
+}
+
 # ======================== CLASS / RACIAL FEATURES ========================
 # Each entry: adv_on = roll choice values that get advantage while active.
 # auto_on = toggled ON by default when the RollView opens.
@@ -756,19 +777,19 @@ def _combat_options(char: dict) -> list[discord.SelectOption]:
     options = [
         discord.SelectOption(
             label="⚔️  Attack Roll",    value="attack",
-            description=f"d20 {_fmt_mod(atk_b)}  ({STAT_ABBR[atk]} mod + Prof +{PROF_BONUS})",
+            description=f"d20 {_fmt_mod(atk_b)}",
         ),
         discord.SelectOption(
             label="⚡  Initiative",     value="initiative",
-            description=f"d20 {_fmt_mod(dex_m)}  (DEX mod)",
+            description=f"d20 {_fmt_mod(dex_m)}",
         ),
         discord.SelectOption(
             label="💀  Death Save",     value="death_save",
-            description="Flat d20 - stabilize or fade",
+            description="Stabilize or fade",
         ),
         discord.SelectOption(
             label=f"💊  Hit Die  (d{die})", value="hit_die",
-            description=f"d{die} {_fmt_mod(con_m)}  (CON mod) - Short Rest",
+            description=f"d{die} {_fmt_mod(con_m)}  — Short Rest",
         ),
         discord.SelectOption(
             label="️  Damage Roll",    value="damage",
@@ -780,11 +801,10 @@ def _combat_options(char: dict) -> list[discord.SelectOption]:
         mod      = _mod(char[stat])
         has_prof = stat in char["save_profs"]
         total    = mod + (PROF_BONUS if has_prof else 0)
-        note     = f" + Prof +{PROF_BONUS}" if has_prof else ""
         options.append(discord.SelectOption(
             label=f"🛡️  {STAT_ABBR[stat]} Save",
             value=f"save_{stat}",
-            description=f"d20 {_fmt_mod(total)}{note}",
+            description=f"d20 {_fmt_mod(total)}",
         ))
 
     return options  # 13 options
@@ -805,7 +825,6 @@ def _check_options(char: dict) -> list[discord.SelectOption]:
         options.append(discord.SelectOption(
             label=f"🎯  d{sides}",
             value=f"die_{sides}",
-            description=f"Straight d{sides} roll",
         ))
 
     options.append(discord.SelectOption(
@@ -900,7 +919,7 @@ def _skill_options(char: dict) -> list[discord.SelectOption]:
         options.append(discord.SelectOption(
             label=f"{_stat_emoji.get(stat, '🎲')}  {label}{star}",
             value=f"skill_{skill_key}",
-            description=f"{STAT_ABBR[stat]}  d20 {_fmt_mod(bonus)}" + (" (proficient)" if has_prof else ""),
+            description=SKILL_DESCS.get(skill_key, ""),
         ))
     return options
 
