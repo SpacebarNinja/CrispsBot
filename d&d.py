@@ -66,7 +66,7 @@ CHARACTERS: dict[str, dict] = {
         "weapons": [
             {"name": "Fire Bolt",    "emoji": "🔥", "stat": "int", "extra": -1, "desc": "Ranged spell, 1d10 fire"},
             {"name": "Dagger",       "emoji": "🗡️",  "stat": "int", "extra": -2, "desc": "Ranged/Melee, 1d4+2"},
-            {"name": "Quarterstaff", "emoji": "🪵", "stat": "str", "extra": -2, "desc": "Melee, 1d6-3 / 1d8-3"},
+            {"name": "Quarterstaff", "emoji": "🦯", "stat": "str", "extra": -2, "desc": "Melee, 1d6-3 / 1d8-3"},
         ],
     },
     "isaiah": {
@@ -84,9 +84,9 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "str",
         "speed":       30,
         "weapons": [
-            {"name": "Longsword",      "emoji": "⚔️",  "stat": "str", "extra": -2, "desc": "Melee, 1d8+2 / 1d10+2"},
-            {"name": "Light Crossbow", "emoji": "🎯", "stat": "dex", "extra": +2, "desc": "Ranged, 1d8"},
-            {"name": "Vampiric Bite",  "emoji": "🧛", "stat": "str", "extra": 0, "desc": "Unarmed, heals prof on hit"},
+            {"name": "Longsword",      "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8+2",   "dmg": (1, 8, 2)},
+            {"name": "Light Crossbow", "emoji": "🎯", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8",     "dmg": (1, 8, 0)},
+            {"name": "Vampiric Bite",  "emoji": "🧛", "stat": "str", "extra": 0, "desc": "Unarmed, heals on hit"},
         ],
     },
     "aeran": {
@@ -104,9 +104,9 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "dex",
         "speed":       30,
         "weapons": [
-            {"name": "Longbow",    "emoji": "🏹", "stat": "dex", "extra": 2, "desc": "Ranged, 1d8+4"},
-            {"name": "Shortsword", "emoji": "🗡️",  "stat": "dex", "extra": 2, "desc": "Melee, 1d6+4"},
-            {"name": "Talons",     "emoji": "🦅", "stat": "dex", "extra": 0, "desc": "Natural, 1d6 slashing"},
+            {"name": "Longbow",    "emoji": "🏹", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8+4",  "dmg": (1, 8, 4)},
+            {"name": "Shortsword", "emoji": "🗡️",  "stat": "dex", "extra": 0, "desc": "Melee, 1d6+4",   "dmg": (1, 6, 4)},
+            {"name": "Talons",     "emoji": "🦅", "stat": "dex", "extra": 0, "desc": "Natural, 1d6+4", "dmg": (1, 6, 4)},
         ],
     },
     "bablino": {
@@ -126,7 +126,7 @@ CHARACTERS: dict[str, dict] = {
         "weapons": [
             {"name": "Greataxe", "emoji": "🪓", "stat": "str", "extra": 2, "desc": "Melee, 1d12+2"},
             {"name": "Handaxe",  "emoji": "🔪", "stat": "str", "extra": 2, "desc": "Melee, 1d6+2"},
-            {"name": "Javelin",  "emoji": "🪃", "stat": "str", "extra": 2, "desc": "Thrown, 1d6+2"},
+            {"name": "Javelin",  "emoji": "🔱", "stat": "str", "extra": 2, "desc": "Thrown, 1d6+2"},
         ],
     },
     "faye": {
@@ -147,7 +147,7 @@ CHARACTERS: dict[str, dict] = {
             {"name": "Thorn Whip",    "emoji": "🧶", "stat": "wis", "extra": 2, "desc": "Melee spell, 1d6"},
             {"name": "Shillelagh",    "emoji": "🌿", "stat": "wis", "extra": 2, "desc": "Melee spell, 1d8+4"},
             {"name": "Scimitar",      "emoji": "⚔️",  "stat": "str", "extra": 2, "desc": "Melee, 1d6+3"},
-            {"name": "Quarterstaff",  "emoji": "🪵", "stat": "str", "extra": 2, "desc": "Melee, 1d6+1 / 1d8+1"},
+            {"name": "Quarterstaff",  "emoji": "🦯", "stat": "str", "extra": 2, "desc": "Melee, 1d6+1 / 1d8+1"},
         ],
     },
     "steria": {
@@ -165,8 +165,8 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "str",
         "speed":       30,
         "weapons": [
-            {"name": "Longsword", "emoji": "⚔️",  "stat": "str", "extra": 2, "desc": "Melee, 1d8+2 / 1d10+2"},
-            {"name": "Javelin",   "emoji": "🪃", "stat": "str", "extra": 2, "desc": "Thrown, 1d6+2"},
+            {"name": "Longsword", "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8+2",  "dmg": (1, 8, 2)},
+            {"name": "Javelin",   "emoji": "🔱", "stat": "str", "extra": 0, "desc": "Thrown, 1d6+2", "dmg": (1, 6, 2)},
         ],
     },
 }
@@ -448,6 +448,21 @@ def fmt_custom_roll(formula: str, rolls: list[int], modifier: int, total: int) -
         f"╰ {roll_str}{mod_str} = **{total}**"
     )
 
+
+def fmt_weapon_damage(char: dict, weapon: dict) -> str:
+    if "dmg" not in weapon:
+        return f"{weapon['emoji']} **{weapon['name']}** — *(no damage dice — special attack)*"
+    count, sides, mod = weapon["dmg"]
+    rolls   = roll_dice(count, sides)
+    total   = max(1, sum(rolls) + mod)
+    roll_str = " + ".join(f"`{r}`" for r in rolls)
+    mod_str  = f" {_fmt_mod(mod)}" if mod != 0 else ""
+    formula  = f"{count}d{sides}" + (f"+{mod}" if mod > 0 else str(mod) if mod < 0 else "")
+    return (
+        f"{weapon['emoji']} **{weapon['name']}** damage `{formula}`\n"
+        f"╰ {roll_str}{mod_str} = **{total} dmg**"
+    )
+
 # ======================== DICE PARSER ========================
 
 _DICE_RE = re.compile(r"^(\d+)?d(\d+)\s*([+\-]\s*\d+)?$", re.IGNORECASE)
@@ -475,6 +490,9 @@ def resolve_roll(choice: str, char: dict, adv_mode=None, atk_extra: int = 0) -> 
     if choice.startswith("weapon_"):
         idx = int(choice[len("weapon_"):])
         return fmt_attack_roll(char, char["weapons"][idx], adv_mode)
+    if choice.startswith("dmg_"):
+        idx = int(choice[len("dmg_"):])
+        return fmt_weapon_damage(char, char["weapons"][idx])
     if choice.startswith("check_"):
         return fmt_ability_check(char, choice[len("check_"):], adv_mode)
     if choice.startswith("skill_"):
@@ -805,11 +823,7 @@ class CustomRollModal(discord.ui.Modal, title="Custom Roll"):
 
 # ======================== SELECT MENUS ========================
 
-def _combat_options(char: dict) -> list[discord.SelectOption]:
-    dex_m = _mod(char["dex"])
-    con_m = _mod(char["con"])
-    die   = char["hit_die"]
-
+def _weapon_options(char: dict) -> list[discord.SelectOption]:
     options = []
     for i, w in enumerate(char.get("weapons", [])):
         bonus = _mod(char[w["stat"]]) + PROF_BONUS + w.get("extra", 0)
@@ -818,26 +832,49 @@ def _combat_options(char: dict) -> list[discord.SelectOption]:
             value=f"weapon_{i}",
             description=f"d20 {_fmt_mod(bonus)} — {w['desc']}",
         ))
+    return options
 
-    options += [
-        discord.SelectOption(
-            label="⚡  Initiative",     value="initiative",
-            description=f"d20 {_fmt_mod(dex_m)}",
-        ),
-        discord.SelectOption(
-            label="💀  Death Save",     value="death_save",
-            description="Stabilize or fade",
-        ),
-        discord.SelectOption(
-            label=f"💊  Hit Die  (d{die})", value="hit_die",
-            description=f"d{die} {_fmt_mod(con_m)}  — Short Rest",
-        ),
-        discord.SelectOption(
-            label="️  Damage Roll",    value="damage",
-            description="Enter weapon / spell dice",
-        ),
-    ]
 
+def _damage_options(char: dict) -> list[discord.SelectOption]:
+    options = []
+    for i, w in enumerate(char.get("weapons", [])):
+        if "dmg" not in w:
+            continue
+        count, sides, mod = w["dmg"]
+        formula = f"{count}d{sides}" + (f"+{mod}" if mod > 0 else str(mod) if mod < 0 else "")
+        options.append(discord.SelectOption(
+            label=f"{w['emoji']}  {w['name']}",
+            value=f"dmg_{i}",
+            description=formula,
+        ))
+    return options
+
+
+def _check_roll_options(char: dict) -> list[discord.SelectOption]:
+    _stat_emoji = {"str": "💪", "dex": "🤸", "int": "📚", "wis": "👁️", "cha": "💬"}
+    options = []
+    for skill_key, (stat, label) in SKILLS.items():
+        has_prof = skill_key in char.get("skill_profs", set())
+        star     = " ★" if has_prof else ""
+        options.append(discord.SelectOption(
+            label=f"{_stat_emoji.get(stat, '🎲')}  {label}{star}",
+            value=f"skill_{skill_key}",
+            description=SKILL_DESCS.get(skill_key, ""),
+        ))
+    for stat in ("str", "dex", "con", "int", "wis", "cha"):
+        mod = _mod(char[stat])
+        options.append(discord.SelectOption(
+            label=f"🎲  {STAT_LABELS[stat]} Check",
+            value=f"check_{stat}",
+            description=f"d20 {_fmt_mod(mod)}",
+        ))
+    return options  # 24 options
+
+
+def _saves_options(char: dict) -> list[discord.SelectOption]:
+    con_m = _mod(char["con"])
+    die   = char["hit_die"]
+    options = []
     for stat in ("str", "dex", "con", "int", "wis", "cha"):
         mod      = _mod(char[stat])
         has_prof = stat in char["save_profs"]
@@ -847,146 +884,71 @@ def _combat_options(char: dict) -> list[discord.SelectOption]:
             value=f"save_{stat}",
             description=f"d20 {_fmt_mod(total)}",
         ))
-
-    return options
-
-
-def _check_options(char: dict) -> list[discord.SelectOption]:
-    options = []
-
-    for stat in ("str", "dex", "con", "int", "wis", "cha"):
-        mod = _mod(char[stat])
-        options.append(discord.SelectOption(
-            label=f"🎲  {STAT_LABELS[stat]} Check",
-            value=f"check_{stat}",
-            description=f"d20 {_fmt_mod(mod)}",
-        ))
-
-    for sides in (4, 6, 8, 10, 12, 20, 100):
-        options.append(discord.SelectOption(
-            label=f"🎯  d{sides}",
-            value=f"die_{sides}",
-        ))
-
-    options.append(discord.SelectOption(
-        label="✏️  Custom Roll",
-        value="custom",
-        description="Enter your own dice formula",
-    ))
-
-    return options  # 14 options
+    options += [
+        discord.SelectOption(label="💀  Death Save",       value="death_save", description="Stabilize or fade"),
+        discord.SelectOption(label=f"💊  Hit Die  (d{die})", value="hit_die",    description=f"d{die} {_fmt_mod(con_m)} — Short Rest"),
+    ]
+    return options  # 8 options
 
 
-class CombatSavesSelect(discord.ui.Select):
+def _sel_update(view, select_item, choice):
+    """Shared state update for all roll select callbacks."""
+    view.selected_roll = choice
+    _sync_select_defaults(view, select_item, choice)
+    for item in view.children:
+        if isinstance(item, RollConfirmButton):
+            item.disabled = False
+
+
+class WeaponsSelect(discord.ui.Select):
     def __init__(self, char_key: str, char: dict, roll_interaction: discord.Interaction):
-        self.char_key         = char_key
-        self.char             = char
-        self.roll_interaction = roll_interaction
-        super().__init__(
-            placeholder="Combat, Saves & Utility",
-            options=_combat_options(char),
-            row=0,
-        )
+        self.char_key = char_key; self.char = char; self.roll_interaction = roll_interaction
+        super().__init__(placeholder="Attack Rolls", options=_weapon_options(char), row=0)
 
     async def callback(self, interaction: discord.Interaction):
-        choice  = self.values[0]
-        channel = interaction.channel
-        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            await interaction.response.send_message("❌ Can't roll here.", ephemeral=True)
-            return
-
-        if choice == "damage":
-            await interaction.response.send_modal(
-                DamageModal(self.char_key, self.roll_interaction)
-            )
-            return
-
-        view: RollView = self.view
-        view.selected_roll = choice
-        _sync_select_defaults(view, self, choice)
-        for item in view.children:
-            if isinstance(item, RollConfirmButton):
-                item.disabled = False
+        _sel_update(self.view, self, self.values[0])
         await interaction.response.edit_message(
-            content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
-            view=view,
+            content=_roll_view_content(self.view.char, self.view.selected_roll, self.view.adv_mode, self.view.active_features),
+            view=self.view,
         )
 
 
-class ChecksDiceSelect(discord.ui.Select):
+class DamageSelect(discord.ui.Select):
     def __init__(self, char_key: str, char: dict, roll_interaction: discord.Interaction):
-        self.char_key         = char_key
-        self.char             = char
-        self.roll_interaction = roll_interaction
-        super().__init__(
-            placeholder="Ability Checks & Dice",
-            options=_check_options(char),
-            row=1,
-        )
+        self.char_key = char_key; self.char = char; self.roll_interaction = roll_interaction
+        super().__init__(placeholder="Damage Rolls", options=_damage_options(char), row=1)
 
     async def callback(self, interaction: discord.Interaction):
-        choice  = self.values[0]
-        channel = interaction.channel
-        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            await interaction.response.send_message("❌ Can't roll here.", ephemeral=True)
-            return
-
-        if choice == "custom":
-            await interaction.response.send_modal(
-                CustomRollModal(self.char_key, self.roll_interaction)
-            )
-            return
-
-        view: RollView = self.view
-        view.selected_roll = choice
-        _sync_select_defaults(view, self, choice)
-        for item in view.children:
-            if isinstance(item, RollConfirmButton):
-                item.disabled = False
+        _sel_update(self.view, self, self.values[0])
         await interaction.response.edit_message(
-            content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
-            view=view,
+            content=_roll_view_content(self.view.char, self.view.selected_roll, self.view.adv_mode, self.view.active_features),
+            view=self.view,
         )
 
 
-def _skill_options(char: dict) -> list[discord.SelectOption]:
-    _stat_emoji = {"str": "💪", "dex": "🤸", "int": "📚", "wis": "👁️", "cha": "💬"}
-    options = []
-    for skill_key, (stat, label) in SKILLS.items():
-        mod      = _mod(char[stat])
-        has_prof = skill_key in char.get("skill_profs", set())
-        bonus    = mod + (PROF_BONUS if has_prof else 0)
-        star     = " ★" if has_prof else ""
-        options.append(discord.SelectOption(
-            label=f"{_stat_emoji.get(stat, '🎲')}  {label}{star}",
-            value=f"skill_{skill_key}",
-            description=SKILL_DESCS.get(skill_key, ""),
-        ))
-    return options
-
-
-class SkillsSelect(discord.ui.Select):
+class CheckRollsSelect(discord.ui.Select):
     def __init__(self, char_key: str, char: dict, roll_interaction: discord.Interaction):
-        self.char_key         = char_key
-        self.char             = char
-        self.roll_interaction = roll_interaction
-        super().__init__(
-            placeholder="Skill Checks",
-            options=_skill_options(char),
-            row=2,
-        )
+        self.char_key = char_key; self.char = char; self.roll_interaction = roll_interaction
+        super().__init__(placeholder="Check Rolls", options=_check_roll_options(char), row=2)
 
     async def callback(self, interaction: discord.Interaction):
-        choice = self.values[0]
-        view: RollView = self.view
-        view.selected_roll = choice
-        _sync_select_defaults(view, self, choice)
-        for item in view.children:
-            if isinstance(item, RollConfirmButton):
-                item.disabled = False
+        _sel_update(self.view, self, self.values[0])
         await interaction.response.edit_message(
-            content=_roll_view_content(view.char, choice, view.adv_mode, view.active_features),
-            view=view,
+            content=_roll_view_content(self.view.char, self.view.selected_roll, self.view.adv_mode, self.view.active_features),
+            view=self.view,
+        )
+
+
+class SavesSelect(discord.ui.Select):
+    def __init__(self, char_key: str, char: dict, roll_interaction: discord.Interaction):
+        self.char_key = char_key; self.char = char; self.roll_interaction = roll_interaction
+        super().__init__(placeholder="Saves", options=_saves_options(char), row=3)
+
+    async def callback(self, interaction: discord.Interaction):
+        _sel_update(self.view, self, self.values[0])
+        await interaction.response.edit_message(
+            content=_roll_view_content(self.view.char, self.view.selected_roll, self.view.adv_mode, self.view.active_features),
+            view=self.view,
         )
 
 
@@ -999,14 +961,18 @@ def _choice_label(choice: str, char: dict = None) -> str:
         idx = int(choice[len("weapon_"):])
         w = char["weapons"][idx]
         return f"{w['emoji']} {w['name']}"
+    if choice.startswith("dmg_") and char is not None:
+        idx = int(choice[len("dmg_"):])
+        w = char["weapons"][idx]
+        return f"{w['emoji']} {w['name']} Damage"
     return {"initiative": "Initiative",
             "death_save": "Death Save", "hit_die": "Hit Die"}.get(choice, choice)
 
 
 def _sync_select_defaults(view: discord.ui.View, active_select, chosen_value: str) -> None:
-    """Mark chosen_value as default in active_select; clear defaults on the other two."""
+    """Mark chosen_value as default in active_select; clear defaults on the others."""
     for item in view.children:
-        if not isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)):
+        if not isinstance(item, (WeaponsSelect, DamageSelect, CheckRollsSelect, SavesSelect)):
             continue
         for opt in item.options:
             opt.default = (item is active_select and opt.value == chosen_value)
@@ -1034,7 +1000,7 @@ def _roll_view_content(char: dict, selected_roll, adv_mode, active_features=None
 
 class RollConfirmButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="🎲 ROLL!", style=discord.ButtonStyle.primary, row=3, disabled=True)
+        super().__init__(label="🎲 ROLL!", style=discord.ButtonStyle.primary, row=4, disabled=True)
 
     async def callback(self, interaction: discord.Interaction):
         view: RollView = self.view
@@ -1049,11 +1015,10 @@ class RollConfirmButton(discord.ui.Button):
         )
         channel = interaction.channel
         result  = resolve_roll(choice, view.char, effective_adv, atk_extra)
-        # Reset selection, clear all dropdown defaults
         view.selected_roll = None
         self.disabled = True
         for item in view.children:
-            if isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)):
+            if isinstance(item, (WeaponsSelect, DamageSelect, CheckRollsSelect, SavesSelect)):
                 for opt in item.options:
                     opt.default = False
         await interaction.response.defer(ephemeral=True)
@@ -1064,10 +1029,26 @@ class RollConfirmButton(discord.ui.Button):
             pass
 
 
+class InitiativeButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="⚡ Initiative", style=discord.ButtonStyle.secondary, row=4)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: RollView = self.view
+        effective_adv  = _effective_adv(view.adv_mode, view.active_features, "initiative")
+        result         = fmt_initiative(view.char, effective_adv)
+        await interaction.response.defer(ephemeral=True)
+        await _send_as_char(interaction.channel, view.char_key, result)
+        try:
+            await interaction.delete_original_response()
+        except Exception:
+            pass
+
+
 class AdvToggleButton(discord.ui.Button):
     def __init__(self, mode: str):
         label = "🔼 w/ Advantage?" if mode == "advantage" else "🔽 w/ Disadvantage?"
-        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=3)
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=4)
         self.mode = mode
 
     async def callback(self, interaction: discord.Interaction):
@@ -1094,10 +1075,12 @@ class RollView(discord.ui.View):
         self.char = char
         self.char_key = char_key
         self.roll_interaction = roll_interaction
-        self.add_item(CombatSavesSelect(char_key, char, roll_interaction))
-        self.add_item(ChecksDiceSelect(char_key, char, roll_interaction))
-        self.add_item(SkillsSelect(char_key, char, roll_interaction))
+        self.add_item(WeaponsSelect(char_key, char, roll_interaction))
+        self.add_item(DamageSelect(char_key, char, roll_interaction))
+        self.add_item(CheckRollsSelect(char_key, char, roll_interaction))
+        self.add_item(SavesSelect(char_key, char, roll_interaction))
         self.add_item(RollConfirmButton())
+        self.add_item(InitiativeButton())
         self.add_item(AdvToggleButton("advantage"))
         self.add_item(AdvToggleButton("disadvantage"))
 
