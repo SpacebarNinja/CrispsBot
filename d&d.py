@@ -877,7 +877,12 @@ def _check_roll_options(char: dict) -> list[discord.SelectOption]:
             value=f"check_{stat}",
             description=f"d20 {_fmt_mod(mod)}",
         ))
-    return options  # 24 options
+    options.append(discord.SelectOption(
+        label="✏️  Custom Roll",
+        value="custom_roll",
+        description="Enter any dice formula, e.g. 4d6+2",
+    ))
+    return options  # 25 options
 
 
 def _saves_options(char: dict) -> list[discord.SelectOption]:
@@ -928,6 +933,9 @@ class CheckRollsSelect(discord.ui.Select):
         super().__init__(placeholder="Check Rolls", options=_check_roll_options(char), row=1)
 
     async def callback(self, interaction: discord.Interaction):
+        if self.values[0] == "custom_roll":
+            await interaction.response.send_modal(CustomRollModal(self.char_key, self.roll_interaction))
+            return
         _sel_update(self.view, self, self.values[0])
         await interaction.response.edit_message(
             content=_roll_view_content(self.view.char, self.view.selected_roll, self.view.adv_mode, self.view.active_features),
@@ -952,6 +960,7 @@ def _choice_label(choice: str, char: dict = None) -> str:
     if choice.startswith("check_"): return f"{STAT_LABELS[choice[6:]]} Check"
     if choice.startswith("save_"):  return f"{STAT_LABELS[choice[5:]]} Save"
     if choice.startswith("skill_"): return f"{SKILLS[choice[6:]][1]} Check"
+    if choice == "custom_roll":    return "Custom Roll"
     if choice.startswith("die_"):   return f"d{choice[4:]}"
     if choice.startswith("weapon_") and char is not None:
         idx = int(choice[len("weapon_"):])
