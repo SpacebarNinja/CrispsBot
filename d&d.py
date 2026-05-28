@@ -64,9 +64,9 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "int",
         "speed":       30,
         "weapons": [
-            {"name": "Fire Bolt",    "emoji": "🔥", "stat": "int", "extra": -1, "desc": "Ranged spell, 1d10 fire"},
-            {"name": "Dagger",       "emoji": "🗡️",  "stat": "int", "extra": -2, "desc": "Ranged/Melee, 1d4+2"},
-            {"name": "Quarterstaff", "emoji": "🦯", "stat": "str", "extra": -2, "desc": "Melee, 1d6-3 / 1d8-3"},
+            {"name": "Fire Bolt",    "emoji": "🔥", "stat": "int", "extra": -1, "desc": "Ranged spell, 1d10",   "dmg": (1, 10, 0)},
+            {"name": "Dagger",       "emoji": "🗡️",  "stat": "dex", "extra":  0, "desc": "Melee/Ranged, 1d4+2",  "dmg": (1,  4, 2)},
+            {"name": "Quarterstaff", "emoji": "🦯", "stat": "str", "extra":  1, "desc": "Melee, 1d6-3",          "dmg": (1,  6,-3)},
         ],
     },
     "isaiah": {
@@ -124,9 +124,9 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "str",
         "speed":       30,
         "weapons": [
-            {"name": "Greataxe", "emoji": "🪓", "stat": "str", "extra": 2, "desc": "Melee, 1d12+2"},
-            {"name": "Handaxe",  "emoji": "🔪", "stat": "str", "extra": 2, "desc": "Melee, 1d6+2"},
-            {"name": "Javelin",  "emoji": "🔱", "stat": "str", "extra": 2, "desc": "Thrown, 1d6+2"},
+            {"name": "Greataxe", "emoji": "🪓", "stat": "str", "extra": 0, "desc": "Melee, 1d12+2",  "dmg": (1, 12, 2)},
+            {"name": "Handaxe",  "emoji": "🔪", "stat": "str", "extra": 0, "desc": "Melee, 1d6+2",   "dmg": (1,  6, 2)},
+            {"name": "Javelin",  "emoji": "🔱", "stat": "str", "extra": 0, "desc": "Thrown, 1d6+2",  "dmg": (1,  6, 2)},
         ],
     },
     "faye": {
@@ -144,10 +144,10 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "wis",
         "speed":       35,
         "weapons": [
-            {"name": "Thorn Whip",    "emoji": "🧶", "stat": "wis", "extra": 2, "desc": "Melee spell, 1d6"},
-            {"name": "Shillelagh",    "emoji": "🌿", "stat": "wis", "extra": 2, "desc": "Melee spell, 1d8+4"},
-            {"name": "Scimitar",      "emoji": "⚔️",  "stat": "str", "extra": 2, "desc": "Melee, 1d6+3"},
-            {"name": "Quarterstaff",  "emoji": "🦯", "stat": "str", "extra": 2, "desc": "Melee, 1d6+1 / 1d8+1"},
+            {"name": "Thorn Whip",   "emoji": "🧶", "stat": "wis", "extra": 0, "desc": "Melee spell, 1d6",  "dmg": (1, 6, 0)},
+            {"name": "Shillelagh",   "emoji": "🌿", "stat": "wis", "extra": 0, "desc": "Melee spell, 1d8+4", "dmg": (1, 8, 4)},
+            {"name": "Scimitar",     "emoji": "⚔️",  "stat": "dex", "extra": 0, "desc": "Melee, 1d6+3",       "dmg": (1, 6, 3)},
+            {"name": "Quarterstaff", "emoji": "🦯", "stat": "str", "extra": 0, "desc": "Melee, 1d6+1",        "dmg": (1, 6, 1)},
         ],
     },
     "steria": {
