@@ -333,10 +333,13 @@ def fmt_attack_roll(char: dict, adv_mode=None, extra_bonus: int = 0) -> str:
     roll, adv_note = _d20_with_mode(adv_mode)
     total = roll + bonus + extra_bonus
 
-    crit = ""
-    if roll == 20: crit = " ✨ **CRITICAL HIT!**"
-    elif roll == 1: crit = " 💀 **CRITICAL MISS**"
+    if roll == 1:
+        return (
+            f"🎲 **Attack Roll**{_adv_suffix(adv_mode)} 💀 **CRITICAL MISS**\n"
+            f"╰ `1`{adv_note}"
+        )
 
+    crit = " ✨ **CRITICAL HIT!**" if roll == 20 else ""
     extra_str = f" +{extra_bonus}" if extra_bonus else ""
     return (
         f"🎲 **Attack Roll**{_adv_suffix(adv_mode)}{crit}\n"
@@ -599,19 +602,23 @@ class DMAttackModal(discord.ui.Modal, title="DM Attack Roll"):
             return
         roll, adv_note = _d20_with_mode(self.adv_mode)
         total = roll + mod
-        crit  = ""
-        if roll == 20: crit = " ✨ **CRITICAL HIT!**"
-        elif roll == 1: crit = " 💀 **CRITICAL MISS**"
-        mod_str   = f" {_fmt_mod(mod)}" if mod != 0 else ""
-        adv_str   = _adv_suffix(self.adv_mode)
-        text = (
-            f"🎲 **Attack Roll**{adv_str}{crit}\n"
-            f"╰ `{roll}`{adv_note}{mod_str} = **{total}**"
-        )
+        adv_str = _adv_suffix(self.adv_mode)
+        if roll == 1:
+            text = (
+                f"🎲 **Attack Roll**{adv_str} 💀 **CRITICAL MISS**\n"
+                f"╰ `1`{adv_note}"
+            )
+        else:
+            crit    = " ✨ **CRITICAL HIT!**" if roll == 20 else ""
+            mod_str = f" {_fmt_mod(mod)}" if mod != 0 else ""
+            text = (
+                f"🎲 **Attack Roll**{adv_str}{crit}\n"
+                f"╰ `{roll}`{adv_note}{mod_str} = **{total}**"
+            )
         await interaction.response.defer(ephemeral=True)
         await _send_as_dm(interaction.channel, text)
         try:
-            await self.roll_interaction.edit_original_response(content="✅ Done! Check the channel.", view=None)
+            await self.roll_interaction.delete_original_response()
         except Exception:
             pass
 
@@ -724,9 +731,7 @@ class DamageModal(discord.ui.Modal, title="Damage Roll"):
         await interaction.response.defer(ephemeral=True)
         await _send_as_char(interaction.channel, self.char_key, text)
         try:
-            await self.roll_interaction.edit_original_response(
-                content="✅ Done! Check the channel.", view=None
-            )
+            await self.roll_interaction.delete_original_response()
         except Exception:
             pass
 
@@ -759,9 +764,7 @@ class CustomRollModal(discord.ui.Modal, title="Custom Roll"):
         await interaction.response.defer(ephemeral=True)
         await _send_as_char(interaction.channel, self.char_key, text)
         try:
-            await self.roll_interaction.edit_original_response(
-                content="✅ Done! Check the channel.", view=None
-            )
+            await self.roll_interaction.delete_original_response()
         except Exception:
             pass
 
@@ -1011,11 +1014,12 @@ class RollConfirmButton(discord.ui.Button):
             if isinstance(item, (CombatSavesSelect, ChecksDiceSelect, SkillsSelect)):
                 for opt in item.options:
                     opt.default = False
-        await interaction.response.edit_message(
-            content=_roll_view_content(view.char, None, view.adv_mode, view.active_features),
-            view=view,
-        )
+        await interaction.response.defer(ephemeral=True)
         await _send_as_char(channel, view.char_key, result)
+        try:
+            await interaction.delete_original_response()
+        except Exception:
+            pass
 
 
 class AdvToggleButton(discord.ui.Button):
