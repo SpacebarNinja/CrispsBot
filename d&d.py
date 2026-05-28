@@ -63,6 +63,11 @@ CHARACTERS: dict[str, dict] = {
         "features":    [],
         "attack_stat": "int",
         "speed":       30,
+        "weapons": [
+            {"name": "Fire Bolt",      "emoji": "🔥", "stat": "int", "extra": 0, "desc": "Ranged spell cantrip, 1d10 fire"},
+            {"name": "Shocking Grasp", "emoji": "⚡", "stat": "int", "extra": 0, "desc": "Melee spell cantrip, 1d8 lightning"},
+            {"name": "Quarterstaff",   "emoji": "🪵", "stat": "str", "extra": 0, "desc": "Melee, 1d6 bludgeoning"},
+        ],
     },
     "isaiah": {
         "name":        "Isaiah Sylvester",
@@ -78,6 +83,11 @@ CHARACTERS: dict[str, dict] = {
         "features":    [],
         "attack_stat": "str",
         "speed":       30,
+        "weapons": [
+            {"name": "Longsword",      "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8 slashing"},
+            {"name": "Light Crossbow", "emoji": "🎯", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8 piercing"},
+            {"name": "Vampiric Bite",  "emoji": "🧛", "stat": "str", "extra": 0, "desc": "Unarmed, heals prof on hit"},
+        ],
     },
     "aeran": {
         "name":        "Aeran Wrenkhyre",
@@ -93,6 +103,11 @@ CHARACTERS: dict[str, dict] = {
         "features":    ["archery_style"],
         "attack_stat": "dex",
         "speed":       30,
+        "weapons": [
+            {"name": "Longbow",    "emoji": "🏹", "stat": "dex", "extra": 2, "desc": "Ranged, 1d8 piercing (+2 Archery)"},
+            {"name": "Shortsword", "emoji": "🗡️",  "stat": "dex", "extra": 0, "desc": "Melee finesse, 1d6 piercing"},
+            {"name": "Talons",     "emoji": "🦅", "stat": "dex", "extra": 0, "desc": "Natural unarmed, 1d6 slashing"},
+        ],
     },
     "bablino": {
         "name":        'Bablino "Babi" Darvpinpin',
@@ -108,6 +123,11 @@ CHARACTERS: dict[str, dict] = {
         "features":    ["rage", "reckless_attack", "danger_sense"],
         "attack_stat": "str",
         "speed":       30,
+        "weapons": [
+            {"name": "Greataxe", "emoji": "🪓", "stat": "str", "extra": 0, "desc": "Melee, 1d12 slashing"},
+            {"name": "Handaxe",  "emoji": "🔪", "stat": "str", "extra": 0, "desc": "Melee / thrown, 1d6 slashing"},
+            {"name": "Javelin",  "emoji": "🪃", "stat": "str", "extra": 0, "desc": "Thrown / melee, 1d6 piercing"},
+        ],
     },
     "faye": {
         "name":        'Faye Nelia "Fey" Peregrine',
@@ -123,6 +143,10 @@ CHARACTERS: dict[str, dict] = {
         "features":    [],
         "attack_stat": "wis",
         "speed":       35,
+        "weapons": [
+            {"name": "Shillelagh (Staff)", "emoji": "🌿", "stat": "wis", "extra": 0, "desc": "Melee cantrip, 1d8 bludgeoning"},
+            {"name": "Scimitar",           "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d6 slashing"},
+        ],
     },
     "steria": {
         "name":        "Steria Starspire",
@@ -138,6 +162,10 @@ CHARACTERS: dict[str, dict] = {
         "features":    ["kalashtar_dual_mind"],
         "attack_stat": "str",
         "speed":       30,
+        "weapons": [
+            {"name": "Longsword", "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8 slashing"},
+            {"name": "Javelin",   "emoji": "🪃", "stat": "str", "extra": 0, "desc": "Thrown / melee, 1d6 piercing"},
+        ],
     },
 }
 
@@ -264,8 +292,9 @@ def _adv_suffix(adv_mode) -> str:
 
 def _effective_adv(manual_adv: str | None, active_features: set, choice: str) -> str | None:
     """Compute 5e-correct adv/dis for a specific roll, merging manual toggle and active features."""
+    feat_key = "attack" if choice.startswith("weapon_") else choice
     feature_adv = any(
-        choice in FEATURE_DEFS[fk].get("adv_on", set())
+        feat_key in FEATURE_DEFS[fk].get("adv_on", set())
         for fk in active_features if fk in FEATURE_DEFS
     )
     has_adv = (manual_adv == "advantage") or feature_adv
@@ -327,22 +356,24 @@ def fmt_saving_throw(char: dict, stat: str, adv_mode=None) -> str:
     )
 
 
-def fmt_attack_roll(char: dict, adv_mode=None, extra_bonus: int = 0) -> str:
-    stat  = char["attack_stat"]
-    bonus = _mod(char[stat]) + PROF_BONUS
+def fmt_attack_roll(char: dict, weapon: dict, adv_mode=None) -> str:
+    stat   = weapon["stat"]
+    bonus  = _mod(char[stat]) + PROF_BONUS + weapon.get("extra", 0)
     roll, adv_note = _d20_with_mode(adv_mode)
-    total = roll + bonus + extra_bonus
+    emoji  = weapon["emoji"]
+    name   = weapon["name"]
 
     if roll == 1:
         return (
-            f"🎲 **Attack Roll**{_adv_suffix(adv_mode)} 💀 **CRITICAL MISS**\n"
+            f"{emoji} **{name}**{_adv_suffix(adv_mode)} 💀 **CRITICAL MISS**\n"
             f"╰ `1`{adv_note}"
         )
 
-    crit = " ✨ **CRITICAL HIT!**" if roll == 20 else ""
-    extra_str = f" +{extra_bonus}" if extra_bonus else ""
+    crit      = " ✨ **CRITICAL HIT!**" if roll == 20 else ""
+    extra_str = f" +{weapon['extra']}" if weapon.get("extra") else ""
+    total     = roll + bonus
     return (
-        f"🎲 **Attack Roll**{_adv_suffix(adv_mode)}{crit}\n"
+        f"{emoji} **{name}**{_adv_suffix(adv_mode)}{crit}\n"
         f"╰ `{roll}`{adv_note} {_fmt_mod(bonus)}*({STAT_ABBR[stat]} + Prof{extra_str})* = **{total}**"
     )
 
@@ -439,6 +470,9 @@ def roll_dice(count: int, sides: int) -> list[int]:
 
 def resolve_roll(choice: str, char: dict, adv_mode=None, atk_extra: int = 0) -> str:
     """Map a select menu value to a formatted roll string."""
+    if choice.startswith("weapon_"):
+        idx = int(choice[len("weapon_"):])
+        return fmt_attack_roll(char, char["weapons"][idx], adv_mode)
     if choice.startswith("check_"):
         return fmt_ability_check(char, choice[len("check_"):], adv_mode)
     if choice.startswith("skill_"):
@@ -448,7 +482,6 @@ def resolve_roll(choice: str, char: dict, adv_mode=None, atk_extra: int = 0) -> 
     if choice.startswith("die_"):
         return fmt_raw_die(int(choice[len("die_"):]))
     dispatch = {
-        "attack":      lambda: fmt_attack_roll(char, adv_mode, atk_extra),
         "initiative":  lambda: fmt_initiative(char, adv_mode),
         "death_save":  lambda: fmt_death_save(adv_mode),
         "hit_die":     lambda: fmt_hit_die(char),
@@ -771,17 +804,20 @@ class CustomRollModal(discord.ui.Modal, title="Custom Roll"):
 # ======================== SELECT MENUS ========================
 
 def _combat_options(char: dict) -> list[discord.SelectOption]:
-    atk   = char["attack_stat"]
-    atk_b = _mod(char[atk]) + PROF_BONUS
     dex_m = _mod(char["dex"])
     con_m = _mod(char["con"])
     die   = char["hit_die"]
 
-    options = [
-        discord.SelectOption(
-            label="⚔️  Attack Roll",    value="attack",
-            description=f"d20 {_fmt_mod(atk_b)}",
-        ),
+    options = []
+    for i, w in enumerate(char.get("weapons", [])):
+        bonus = _mod(char[w["stat"]]) + PROF_BONUS + w.get("extra", 0)
+        options.append(discord.SelectOption(
+            label=f"{w['emoji']}  {w['name']}",
+            value=f"weapon_{i}",
+            description=f"d20 {_fmt_mod(bonus)} — {w['desc']}",
+        ))
+
+    options += [
         discord.SelectOption(
             label="⚡  Initiative",     value="initiative",
             description=f"d20 {_fmt_mod(dex_m)}",
@@ -810,7 +846,7 @@ def _combat_options(char: dict) -> list[discord.SelectOption]:
             description=f"d20 {_fmt_mod(total)}",
         ))
 
-    return options  # 13 options
+    return options
 
 
 def _check_options(char: dict) -> list[discord.SelectOption]:
@@ -952,12 +988,16 @@ class SkillsSelect(discord.ui.Select):
         )
 
 
-def _choice_label(choice: str) -> str:
+def _choice_label(choice: str, char: dict = None) -> str:
     if choice.startswith("check_"): return f"{STAT_LABELS[choice[6:]]} Check"
     if choice.startswith("save_"):  return f"{STAT_LABELS[choice[5:]]} Save"
     if choice.startswith("skill_"): return f"{SKILLS[choice[6:]][1]} Check"
     if choice.startswith("die_"):   return f"d{choice[4:]}"
-    return {"attack": "Attack Roll", "initiative": "Initiative",
+    if choice.startswith("weapon_") and char is not None:
+        idx = int(choice[len("weapon_"):])
+        w = char["weapons"][idx]
+        return f"{w['emoji']} {w['name']}"
+    return {"initiative": "Initiative",
             "death_save": "Death Save", "hit_die": "Hit Die"}.get(choice, choice)
 
 
@@ -980,7 +1020,7 @@ def _roll_view_content(char: dict, selected_roll, adv_mode, active_features=None
     # Selection + manual adv/dis overrides
     sel_parts = []
     if selected_roll:
-        sel_parts.append(f"🎯 **{_choice_label(selected_roll)}**")
+        sel_parts.append(f"🎯 **{_choice_label(selected_roll, char)}**")
     if adv_mode == "advantage":
         sel_parts.append("🔼 Override: w/Advantage")
     elif adv_mode == "disadvantage":
