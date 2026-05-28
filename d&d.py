@@ -65,6 +65,7 @@ CHARACTERS: dict[str, dict] = {
         "speed":       30,
         "weapons": [
             {"name": "Fire Bolt",    "emoji": "🔥", "stat": "int", "extra": -1, "desc": "Ranged spell, 1d10",   "dmg": (1, 10, 0), "kind": "cantrip"},
+            {"name": "Sleep",        "emoji": "💤", "stat": "int", "extra":  0, "desc": "1st Level, 5d8 HP effect", "dmg": (5, 8, 0), "kind": "spell", "type": "hp_affected", "has_atk": False},
             {"name": "Dagger",       "emoji": "🗡️",  "stat": "dex", "extra":  0, "desc": "Melee/Ranged, 1d4+2",  "dmg": (1,  4, 2)},
             {"name": "Quarterstaff", "emoji": "🦯", "stat": "str", "extra":  1, "desc": "Melee, 1d6-3",          "dmg": (1,  6,-3)},
         ],
@@ -86,7 +87,7 @@ CHARACTERS: dict[str, dict] = {
         "weapons": [
             {"name": "Longsword",      "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8+2",   "dmg": (1, 8, 2)},
             {"name": "Light Crossbow", "emoji": "🎯", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8",     "dmg": (1, 8, 0)},
-            {"name": "Vampiric Bite",  "emoji": "🧛", "stat": "str", "extra": 0, "desc": "Unarmed, heals on hit"},
+            {"name": "Vampiric Bite",  "emoji": "🧛", "stat": "str", "extra": 0, "desc": "1d4+2 damage + heal 2", "dmg": (1, 4, 2)},
         ],
     },
     "aeran": {
@@ -144,8 +145,9 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "wis",
         "speed":       35,
         "weapons": [
-            {"name": "Thorn Whip",   "emoji": "🧶", "stat": "wis", "extra": 0, "desc": "Melee spell, 1d6",  "dmg": (1, 6, 0), "kind": "cantrip"},
-            {"name": "Shillelagh",   "emoji": "🌿", "stat": "wis", "extra": 0, "desc": "Melee spell, 1d8+4", "dmg": (1, 8, 4), "kind": "cantrip"},
+            {"name": "Thorn Whip",   "emoji": "🧶", "stat": "wis", "extra": 0, "desc": "Melee spell, 1d6",    "dmg": (1, 6, 0), "kind": "cantrip"},
+            {"name": "Shillelagh",   "emoji": "🌿", "stat": "wis", "extra": 0, "desc": "Melee spell, 1d8+4",  "dmg": (1, 8, 4), "kind": "cantrip"},
+            {"name": "Healing Word", "emoji": "✨", "stat": "wis", "extra": 0, "desc": "1st Level, 1d4+4 healing", "dmg": (1, 4, 4), "kind": "spell", "type": "heal", "has_atk": False},
             {"name": "Scimitar",     "emoji": "⚔️",  "stat": "dex", "extra": 0, "desc": "Melee, 1d6+3",       "dmg": (1, 6, 3)},
             {"name": "Quarterstaff", "emoji": "🦯", "stat": "str", "extra": 0, "desc": "Melee, 1d6+1",        "dmg": (1, 6, 1)},
         ],
@@ -453,16 +455,26 @@ def fmt_weapon_damage(char: dict, weapon: dict) -> str:
     kind_tag     = {"cantrip": " (Cantrip)", "spell": " (Spell)"}.get(weapon.get("kind", ""), "")
     display_name = f"{weapon['name']}{kind_tag}"
     if "dmg" not in weapon:
-        return f"{weapon['emoji']} **{display_name}** — *(no damage dice — special attack)*"
+        return f"{weapon['emoji']} **{display_name}** — *(no dice to roll)*"
+    
     count, sides, mod = weapon["dmg"]
     rolls   = roll_dice(count, sides)
-    total   = max(1, sum(rolls) + mod)
+    total   = sum(rolls) + mod
+    if weapon.get("type", "damage") == "damage":
+        total = max(1, total)
+
     roll_str = " + ".join(f"`{r}`" for r in rolls)
     mod_str  = f" {_fmt_mod(mod)}" if mod != 0 else ""
     formula  = f"{count}d{sides}" + (f"+{mod}" if mod > 0 else str(mod) if mod < 0 else "")
+    
+    atype = weapon.get("type", "damage")
+    if atype == "heal": label, unit = "healing", "HP"
+    elif atype == "hp_affected": label, unit = "HP affected", "HP"
+    else: label, unit = "damage", "dmg"
+
     return (
-        f"{weapon['emoji']} **{display_name}** damage `{formula}`\n"
-        f"╰ {roll_str}{mod_str} = **{total} dmg**"
+        f"{weapon['emoji']} **{display_name}** {label} `{formula}`\n"
+        f"╰ {roll_str}{mod_str} = **{total} {unit}**"
     )
 
 # ======================== DICE PARSER ========================
@@ -826,17 +838,21 @@ class CustomRollModal(discord.ui.Modal, title="Custom Roll"):
 def _weapon_options(char: dict) -> list[discord.SelectOption]:
     options = []
     for i, w in enumerate(char.get("weapons", [])):
-        bonus = _mod(char[w["stat"]]) + PROF_BONUS + w.get("extra", 0)
-        options.append(discord.SelectOption(
-            label=f"{w['emoji']}  {w['name']}  ▸ Attack",
-            value=f"weapon_{i}",
-            description=f"d20 {_fmt_mod(bonus)} — {w['desc']}",
-        ))
+        if w.get("has_atk", True):
+            bonus = _mod(char[w['stat']]) + PROF_BONUS + w.get("extra", 0)
+            options.append(discord.SelectOption(
+                label=f"{w['emoji']}  {w['name']}  ▸ Attack",
+                value=f"weapon_{i}",
+                description=f"d20 {_fmt_mod(bonus)} — {w['desc']}",
+            ))
+        
         if "dmg" in w:
             count, sides, mod = w["dmg"]
             formula = f"{count}d{sides}" + (f"+{mod}" if mod > 0 else str(mod) if mod < 0 else "")
+            atype = w.get("type", "damage")
+            lbl = "▸ Healing" if atype == "heal" else "▸ Roll" if atype == "hp_affected" else "▸ Damage"
             options.append(discord.SelectOption(
-                label=f"{w['emoji']}  {w['name']}  ▸ Damage",
+                label=f"{w['emoji']}  {w['name']}  {lbl}",
                 value=f"dmg_{i}",
                 description=formula,
             ))
