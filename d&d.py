@@ -360,7 +360,8 @@ def fmt_saving_throw(char: dict, stat: str, adv_mode=None) -> str:
     )
 
 
-def fmt_attack_roll(char: dict, weapon: dict, adv_mode=None) -> str:
+def fmt_attack_and_damage(char: dict, weapon: dict, adv_mode=None) -> str:
+    """Roll attack + damage together. Suppresses damage on nat 1, doubles dice on nat 20."""
     stat     = weapon["stat"]
     bonus    = _mod(char[stat]) + PROF_BONUS + weapon.get("extra", 0)
     roll, adv_note = _d20_with_mode(adv_mode)
@@ -374,12 +375,35 @@ def fmt_attack_roll(char: dict, weapon: dict, adv_mode=None) -> str:
             f"╰ `1`{adv_note}"
         )
 
-    crit  = " ✨ **CRITICAL HIT!**" if roll == 20 else ""
-    total = roll + bonus
-    return (
+    is_crit = roll == 20
+    crit    = " ✨ **CRITICAL HIT!**" if is_crit else ""
+    total   = roll + bonus
+    atk_line = (
         f"{emoji} **{name}**{_adv_suffix(adv_mode)}{crit}\n"
         f"╰ `{roll}`{adv_note} {_fmt_mod(bonus)} = **{total}**"
     )
+
+    if "dmg" not in weapon:
+        return atk_line
+
+    count, sides, mod = weapon["dmg"]
+    dice_count = count * 2 if is_crit else count
+    rolls  = roll_dice(dice_count, sides)
+    dtotal = sum(rolls) + mod
+    atype  = weapon.get("type", "damage")
+    if atype == "damage":
+        dtotal = max(1, dtotal)
+    roll_str = " + ".join(f"`{r}`" for r in rolls)
+    mod_str  = f" {_fmt_mod(mod)}" if mod != 0 else ""
+    formula  = f"{dice_count}d{sides}" + (f"+{mod}" if mod > 0 else str(mod) if mod < 0 else "")
+    crit_note = " *(crit — double dice)*" if is_crit else ""
+    if atype == "heal":         label, unit = "healing", "HP"
+    elif atype == "hp_affected": label, unit = "HP affected", "HP"
+    else:                        label, unit = "damage", "dmg"
+    dmg_line = (
+        f"╰ {label} `{formula}`{crit_note}: {roll_str}{mod_str} = **{dtotal} {unit}**"
+    )
+    return f"{atk_line}\n{dmg_line}"
 
 
 def fmt_initiative(char: dict, adv_mode=None) -> str:
@@ -503,7 +527,7 @@ def resolve_roll(choice: str, char: dict, adv_mode=None, atk_extra: int = 0) -> 
     """Map a select menu value to a formatted roll string."""
     if choice.startswith("weapon_"):
         idx = int(choice[len("weapon_"):])
-        return fmt_attack_roll(char, char["weapons"][idx], adv_mode)
+        return fmt_attack_and_damage(char, char["weapons"][idx], adv_mode)
     if choice.startswith("dmg_"):
         idx = int(choice[len("dmg_"):])
         return fmt_weapon_damage(char, char["weapons"][idx])
@@ -841,16 +865,16 @@ def _weapon_options(char: dict) -> list[discord.SelectOption]:
         if w.get("has_atk", True):
             bonus = _mod(char[w['stat']]) + PROF_BONUS + w.get("extra", 0)
             options.append(discord.SelectOption(
-                label=f"{w['emoji']}  {w['name']}  ▸ Attack",
+                label=f"{w['emoji']}  {w['name']}",
                 value=f"weapon_{i}",
                 description=f"d20 {_fmt_mod(bonus)} — {w['desc']}",
             ))
-        
-        if "dmg" in w:
+        elif "dmg" in w:
+            # spell/effect with no attack roll — roll-only entry
             count, sides, mod = w["dmg"]
             formula = f"{count}d{sides}" + (f"+{mod}" if mod > 0 else str(mod) if mod < 0 else "")
             atype = w.get("type", "damage")
-            lbl = "▸ Healing" if atype == "heal" else "▸ Roll" if atype == "hp_affected" else "▸ Damage"
+            lbl = "▸ Healing" if atype == "heal" else "▸ Roll"
             options.append(discord.SelectOption(
                 label=f"{w['emoji']}  {w['name']}  {lbl}",
                 value=f"dmg_{i}",
@@ -969,7 +993,7 @@ def _choice_label(choice: str, char: dict = None) -> str:
     if choice.startswith("dmg_") and char is not None:
         idx = int(choice[len("dmg_"):])
         w = char["weapons"][idx]
-        return f"{w['emoji']} {w['name']} Damage"
+        return f"{w['emoji']} {w['name']}"
     return {"initiative": "Initiative",
             "death_save": "Death Save", "hit_die": "Hit Die"}.get(choice, choice)
 
