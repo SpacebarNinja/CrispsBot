@@ -360,8 +360,8 @@ def fmt_saving_throw(char: dict, stat: str, adv_mode=None) -> str:
     )
 
 
-def fmt_attack_and_damage(char: dict, weapon: dict, adv_mode=None) -> str:
-    """Roll attack + damage together. Suppresses damage on nat 1, doubles dice on nat 20."""
+def fmt_attack_roll(char: dict, weapon: dict, adv_mode=None) -> tuple[str, int, bool]:
+    """Roll attack only. Returns (text, raw_d20_roll, is_crit_hit)."""
     stat     = weapon["stat"]
     bonus    = _mod(char[stat]) + PROF_BONUS + weapon.get("extra", 0)
     roll, adv_note = _d20_with_mode(adv_mode)
@@ -370,40 +370,20 @@ def fmt_attack_and_damage(char: dict, weapon: dict, adv_mode=None) -> str:
     name     = f"{weapon['name']}{kind_tag}"
 
     if roll == 1:
-        return (
+        text = (
             f"{emoji} **{name}**{_adv_suffix(adv_mode)} 💀 **CRITICAL MISS**\n"
             f"╰ `1`{adv_note}"
         )
+        return text, 1, False
 
     is_crit = roll == 20
     crit    = " ✨ **CRITICAL HIT!**" if is_crit else ""
     total   = roll + bonus
-    atk_line = (
+    text = (
         f"{emoji} **{name}**{_adv_suffix(adv_mode)}{crit}\n"
         f"╰ `{roll}`{adv_note} {_fmt_mod(bonus)} = **{total}**"
     )
-
-    if "dmg" not in weapon:
-        return atk_line
-
-    count, sides, mod = weapon["dmg"]
-    dice_count = count * 2 if is_crit else count
-    rolls  = roll_dice(dice_count, sides)
-    dtotal = sum(rolls) + mod
-    atype  = weapon.get("type", "damage")
-    if atype == "damage":
-        dtotal = max(1, dtotal)
-    roll_str = " + ".join(f"`{r}`" for r in rolls)
-    mod_str  = f" {_fmt_mod(mod)}" if mod != 0 else ""
-    formula  = f"{dice_count}d{sides}" + (f"+{mod}" if mod > 0 else str(mod) if mod < 0 else "")
-    crit_note = " *(crit — double dice)*" if is_crit else ""
-    if atype == "heal":         label, unit = "healing", "HP"
-    elif atype == "hp_affected": label, unit = "HP affected", "HP"
-    else:                        label, unit = "damage", "dmg"
-    dmg_line = (
-        f"╰ {label} `{formula}`{crit_note}: {roll_str}{mod_str} = **{dtotal} {unit}**"
-    )
-    return f"{atk_line}\n{dmg_line}"
+    return text, roll, is_crit
 
 
 def fmt_initiative(char: dict, adv_mode=None) -> str:
@@ -475,29 +455,31 @@ def fmt_custom_roll(formula: str, rolls: list[int], modifier: int, total: int) -
     )
 
 
-def fmt_weapon_damage(char: dict, weapon: dict) -> str:
+def fmt_weapon_damage(char: dict, weapon: dict, is_crit: bool = False) -> str:
     kind_tag     = {"cantrip": " (Cantrip)", "spell": " (Spell)"}.get(weapon.get("kind", ""), "")
     display_name = f"{weapon['name']}{kind_tag}"
     if "dmg" not in weapon:
         return f"{weapon['emoji']} **{display_name}** — *(no dice to roll)*"
     
     count, sides, mod = weapon["dmg"]
-    rolls   = roll_dice(count, sides)
+    dice_count = count * 2 if is_crit else count
+    rolls   = roll_dice(dice_count, sides)
     total   = sum(rolls) + mod
     if weapon.get("type", "damage") == "damage":
         total = max(1, total)
 
     roll_str = " + ".join(f"`{r}`" for r in rolls)
     mod_str  = f" {_fmt_mod(mod)}" if mod != 0 else ""
-    formula  = f"{count}d{sides}" + (f"+{mod}" if mod > 0 else str(mod) if mod < 0 else "")
-    
+    formula  = f"{dice_count}d{sides}" + (f"+{mod}" if mod > 0 else str(mod) if mod < 0 else "")
+    crit_note = " ✨ *(crit — double dice)*" if is_crit else ""
+
     atype = weapon.get("type", "damage")
     if atype == "heal": label, unit = "healing", "HP"
     elif atype == "hp_affected": label, unit = "HP affected", "HP"
     else: label, unit = "damage", "dmg"
 
     return (
-        f"{weapon['emoji']} **{display_name}** {label} `{formula}`\n"
+        f"{weapon['emoji']} **{display_name}** {label} `{formula}`{crit_note}\n"
         f"╰ {roll_str}{mod_str} = **{total} {unit}**"
     )
 
@@ -524,10 +506,11 @@ def roll_dice(count: int, sides: int) -> list[int]:
 # ======================== ROLL RESOLVER ========================
 
 def resolve_roll(choice: str, char: dict, adv_mode=None, atk_extra: int = 0) -> str:
-    """Map a select menu value to a formatted roll string."""
+    """Map a select menu value to a formatted roll string. (weapon_ is handled separately.)"""
     if choice.startswith("weapon_"):
         idx = int(choice[len("weapon_"):])
-        return fmt_attack_and_damage(char, char["weapons"][idx], adv_mode)
+        text, _, _ = fmt_attack_roll(char, char["weapons"][idx], adv_mode)
+        return text
     if choice.startswith("dmg_"):
         idx = int(choice[len("dmg_"):])
         return fmt_weapon_damage(char, char["weapons"][idx])
@@ -608,31 +591,36 @@ async def _send_as_char(
     char_key: str,
     content: str,
     files: list = None,
-) -> None:
-    """Send as a character. Works in both TextChannels and Threads."""
+    view: discord.ui.View = None,
+):
+    """Send as a character. Works in both TextChannels and Threads.
+    Returns the sent WebhookMessage if a view was attached (or None otherwise)."""
     char = CHARACTERS[char_key]
     wh_channel = channel.parent if isinstance(channel, discord.Thread) else channel
     if not isinstance(wh_channel, discord.TextChannel):
-        return
+        return None
     wh = await _get_char_webhook(wh_channel, char_key)
     send_kw = dict(username=char["name"], allowed_mentions=discord.AllowedMentions.none())
     if isinstance(channel, discord.Thread):
         send_kw["thread"] = channel
     if files:
         send_kw["files"] = files
+    if view is not None:
+        send_kw["view"] = view
+        send_kw["wait"] = True
     try:
         if content:
-            await wh.send(content, **send_kw)
+            return await wh.send(content, **send_kw)
         else:
-            await wh.send(**send_kw)
+            return await wh.send(**send_kw)
     except discord.NotFound:
         # Webhook was deleted — bust cache and recreate
         _webhook_cache.pop(f"{wh_channel.id}:{char_key}", None)
         wh = await _get_char_webhook(wh_channel, char_key)
         if content:
-            await wh.send(content, **send_kw)
+            return await wh.send(content, **send_kw)
         else:
-            await wh.send(**send_kw)
+            return await wh.send(**send_kw)
 
 
 async def _send_as_dm(
@@ -1027,6 +1015,36 @@ def _roll_view_content(char: dict, selected_roll, adv_mode, active_features=None
     return "\n".join(lines)
 
 
+class RollDamageView(discord.ui.View):
+    """View attached to a public attack message — clicking the button rolls damage as
+    the same character, then strips the button from the original message."""
+    def __init__(self, char_key: str, weapon_idx: int, is_crit: bool):
+        super().__init__(timeout=900)  # 15 min
+        self.char_key   = char_key
+        self.weapon_idx = weapon_idx
+        self.is_crit    = is_crit
+        self.message: discord.WebhookMessage | None = None
+
+    @discord.ui.button(label="🎲 Roll Damage", style=discord.ButtonStyle.primary)
+    async def roll_damage(self, interaction: discord.Interaction, button: discord.ui.Button):
+        char   = CHARACTERS[self.char_key]
+        weapon = char["weapons"][self.weapon_idx]
+        text   = fmt_weapon_damage(char, weapon, is_crit=self.is_crit)
+        try:
+            await interaction.response.edit_message(view=None)
+        except Exception:
+            pass
+        self.stop()
+        await _send_as_char(interaction.channel, self.char_key, text)
+
+    async def on_timeout(self):
+        if self.message is not None:
+            try:
+                await self.message.edit(view=None)
+            except Exception:
+                pass
+
+
 class RollConfirmButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label="🎲 ROLL!", style=discord.ButtonStyle.primary, row=3, disabled=True)
@@ -1043,7 +1061,6 @@ class RollConfirmButton(discord.ui.Button):
             for fk in view.active_features if fk in FEATURE_DEFS
         )
         channel = interaction.channel
-        result  = resolve_roll(choice, view.char, effective_adv, atk_extra)
         view.selected_roll = None
         self.disabled = True
         for item in view.children:
@@ -1051,7 +1068,23 @@ class RollConfirmButton(discord.ui.Button):
                 for opt in item.options:
                     opt.default = False
         await interaction.response.defer(ephemeral=True)
-        await _send_as_char(channel, view.char_key, result)
+
+        # Special path: weapon attacks attach a "Roll Damage" button (unless nat 1
+        # or the weapon has no damage dice).
+        if choice.startswith("weapon_"):
+            idx     = int(choice[len("weapon_"):])
+            weapon  = view.char["weapons"][idx]
+            text, raw_roll, is_crit = fmt_attack_roll(view.char, weapon, effective_adv)
+            dmg_view = None
+            if raw_roll != 1 and "dmg" in weapon:
+                dmg_view = RollDamageView(view.char_key, idx, is_crit)
+            sent = await _send_as_char(channel, view.char_key, text, view=dmg_view)
+            if dmg_view is not None and sent is not None:
+                dmg_view.message = sent
+        else:
+            result = resolve_roll(choice, view.char, effective_adv, atk_extra)
+            await _send_as_char(channel, view.char_key, result)
+
         try:
             await interaction.delete_original_response()
         except Exception:
