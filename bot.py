@@ -1203,7 +1203,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.5.1"
+BOT_VERSION = "v4.5.2"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -3003,6 +3003,55 @@ QUESTION_FEATURE_NAMES = {
     "casual": "💬 Casual Questions",
     "typology": "✨ Typology Questions",
 }
+
+# ======================== OWNER TOOLS ========================
+
+_SCRAPE_OWNER_ID    = 779245588596129812
+_SCRAPE_TARGET_ID   = 921246592269430885
+_SCRAPE_CHANNEL_IDS = [
+    1470316740964516038,
+    1450418107368738848,
+    1446277377771573402,
+]
+_SCRAPE_MIN_WORDS   = 10
+_SCRAPE_OUTPUT      = Path(__file__).parent / "venediagram_messages.txt"
+_SCRAPE_PAUSE       = 1.5   # seconds between channels (courtesy headroom on top of auto rate-limiting)
+
+
+@bot.command(name="run")
+async def run_scrape(ctx: commands.Context):
+    """Owner-only: scrape venediagram's messages into venediagram_messages.txt"""
+    if ctx.author.id != _SCRAPE_OWNER_ID:
+        return  # silently ignore everyone else
+
+    collected: list[str] = []
+
+    for ch_id in _SCRAPE_CHANNEL_IDS:
+        channel = bot.get_channel(ch_id)
+        if channel is None or not isinstance(channel, discord.TextChannel):
+            continue
+
+        perms = channel.permissions_for(ctx.guild.me)
+        if not (perms.read_messages and perms.read_message_history):
+            continue
+
+        # channel.history() automatically respects Discord rate limits
+        async for message in channel.history(limit=None, oldest_first=True):
+            if message.author.id != _SCRAPE_TARGET_ID:
+                continue
+            content = message.content.strip()
+            if not content or len(content.split()) < _SCRAPE_MIN_WORDS:
+                continue
+            clean = content.replace("\n", " ").replace("\r", " ")
+            collected.append(f"venediagram: {clean}")
+
+        await asyncio.sleep(_SCRAPE_PAUSE)
+
+    with _SCRAPE_OUTPUT.open("w", encoding="utf-8") as f:
+        f.write("\n".join(collected))
+
+    await ctx.send("finished running")
+
 
 # ======================== EVENTS ========================
 
