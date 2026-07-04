@@ -1203,7 +1203,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.5.2"
+BOT_VERSION = "v4.5.3"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -3040,6 +3040,10 @@ async def run_scrape(ctx: commands.Context):
             if message.author.id != _SCRAPE_TARGET_ID:
                 continue
             content = message.content.strip()
+            # Normalise before word count: strip custom emojis and @mentions
+            content = re.sub(r"<a?:.+?:\d+>", "", content)   # <:name:id> and <a:name:id>
+            content = re.sub(r"<@!?\d+>",     "", content)   # <@id> and <@!id>
+            content = content.strip()
             if not content or len(content.split()) < _SCRAPE_MIN_WORDS:
                 continue
             clean = content.replace("\n", " ").replace("\r", " ")
