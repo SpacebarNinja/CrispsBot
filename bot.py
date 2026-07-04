@@ -1203,7 +1203,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.5.3"
+BOT_VERSION = "v4.5.4"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -3014,13 +3014,12 @@ _SCRAPE_CHANNEL_IDS = [
     1446277377771573402,
 ]
 _SCRAPE_MIN_WORDS   = 10
-_SCRAPE_OUTPUT      = Path(__file__).parent / "venediagram_messages.txt"
 _SCRAPE_PAUSE       = 1.5   # seconds between channels (courtesy headroom on top of auto rate-limiting)
 
 
 @bot.command(name="run")
 async def run_scrape(ctx: commands.Context):
-    """Owner-only: scrape venediagram's messages into venediagram_messages.txt"""
+    """Owner-only: scrape venediagram's messages and DM the result as a file attachment."""
     if ctx.author.id != _SCRAPE_OWNER_ID:
         return  # silently ignore everyone else
 
@@ -3051,9 +3050,13 @@ async def run_scrape(ctx: commands.Context):
 
         await asyncio.sleep(_SCRAPE_PAUSE)
 
-    with _SCRAPE_OUTPUT.open("w", encoding="utf-8") as f:
-        f.write("\n".join(collected))
+    # Build file in memory — no disk write needed, works on any host
+    import io
+    data = "\n".join(collected).encode("utf-8")
+    file = discord.File(io.BytesIO(data), filename="venediagram_messages.txt")
 
+    # DM the file directly to the owner — never visible in the server
+    await ctx.author.send(file=file)
     await ctx.send("finished running")
 
 
