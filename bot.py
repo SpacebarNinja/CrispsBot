@@ -1203,7 +1203,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.5.4"
+BOT_VERSION = "v4.5.5"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -3017,47 +3017,47 @@ _SCRAPE_MIN_WORDS   = 10
 _SCRAPE_PAUSE       = 1.5   # seconds between channels (courtesy headroom on top of auto rate-limiting)
 
 
-@bot.command(name="run")
-async def run_scrape(ctx: commands.Context):
-    """Owner-only: scrape venediagram's messages and DM the result as a file attachment."""
-    if ctx.author.id != _SCRAPE_OWNER_ID:
-        return  # silently ignore everyone else
-
-    collected: list[str] = []
-
-    for ch_id in _SCRAPE_CHANNEL_IDS:
-        channel = bot.get_channel(ch_id)
-        if channel is None or not isinstance(channel, discord.TextChannel):
-            continue
-
-        perms = channel.permissions_for(ctx.guild.me)
-        if not (perms.read_messages and perms.read_message_history):
-            continue
-
-        # channel.history() automatically respects Discord rate limits
-        async for message in channel.history(limit=None, oldest_first=True):
-            if message.author.id != _SCRAPE_TARGET_ID:
-                continue
-            content = message.content.strip()
-            # Normalise before word count: strip custom emojis and @mentions
-            content = re.sub(r"<a?:.+?:\d+>", "", content)   # <:name:id> and <a:name:id>
-            content = re.sub(r"<@!?\d+>",     "", content)   # <@id> and <@!id>
-            content = content.strip()
-            if not content or len(content.split()) < _SCRAPE_MIN_WORDS:
-                continue
-            clean = content.replace("\n", " ").replace("\r", " ")
-            collected.append(f"venediagram: {clean}")
-
-        await asyncio.sleep(_SCRAPE_PAUSE)
-
-    # Build file in memory — no disk write needed, works on any host
-    import io
-    data = "\n".join(collected).encode("utf-8")
-    file = discord.File(io.BytesIO(data), filename="venediagram_messages.txt")
-
-    # DM the file directly to the owner — never visible in the server
-    await ctx.author.send(file=file)
-    await ctx.send("finished running")
+# @bot.command(name="run")
+# async def run_scrape(ctx: commands.Context):
+#     """Owner-only: scrape venediagram's messages and DM the result as a file attachment."""
+#     if ctx.author.id != _SCRAPE_OWNER_ID:
+#         return  # silently ignore everyone else
+#
+#     collected: list[str] = []
+#
+#     for ch_id in _SCRAPE_CHANNEL_IDS:
+#         channel = bot.get_channel(ch_id)
+#         if channel is None or not isinstance(channel, discord.TextChannel):
+#             continue
+#
+#         perms = channel.permissions_for(ctx.guild.me)
+#         if not (perms.read_messages and perms.read_message_history):
+#             continue
+#
+#         # channel.history() automatically respects Discord rate limits
+#         async for message in channel.history(limit=None, oldest_first=True):
+#             if message.author.id != _SCRAPE_TARGET_ID:
+#                 continue
+#             content = message.content.strip()
+#             # Normalise before word count: strip custom emojis and @mentions
+#             content = re.sub(r"<a?:.+?:\d+>", "", content)   # <:name:id> and <a:name:id>
+#             content = re.sub(r"<@!?\d+>",     "", content)   # <@id> and <@!id>
+#             content = content.strip()
+#             if not content or len(content.split()) < _SCRAPE_MIN_WORDS:
+#                 continue
+#             clean = content.replace("\n", " ").replace("\r", " ")
+#             collected.append(f"venediagram: {clean}")
+#
+#         await asyncio.sleep(_SCRAPE_PAUSE)
+#
+#     # Build file in memory — no disk write needed, works on any host
+#     import io
+#     data = "\n".join(collected).encode("utf-8")
+#     file = discord.File(io.BytesIO(data), filename="venediagram_messages.txt")
+#
+#     # DM the file directly to the owner — never visible in the server
+#     await ctx.author.send(file=file)
+#     await ctx.send("finished running")
 
 
 # ======================== EVENTS ========================
