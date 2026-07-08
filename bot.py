@@ -1203,7 +1203,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.5.5"
+BOT_VERSION = "v4.5.6"
 
 VC_CHANNEL_ID = 1446064348073168922
 
