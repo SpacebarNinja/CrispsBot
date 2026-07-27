@@ -66,6 +66,7 @@ CHARACTERS: dict[str, dict] = {
         "weapons": [
             {"name": "Fire Bolt",    "emoji": "🔥", "stat": "int", "extra": -1, "desc": "Ranged spell, 1d10",   "dmg": (1, 10, 0), "kind": "cantrip"},
             {"name": "Sleep",        "emoji": "💤", "stat": "int", "extra":  0, "desc": "1st Level, 5d8 HP effect", "dmg": (5, 8, 0), "kind": "spell", "type": "hp_affected", "has_atk": False},
+            {"name": "Cloud of Daggers", "emoji": "🌀", "stat": "int", "extra": 0, "desc": "2nd Level, 4d4 slashing per turn in area", "dmg": (4, 4, 0), "kind": "spell", "type": "damage", "has_atk": False},
             {"name": "Dagger",       "emoji": "🗡️",  "stat": "dex", "extra":  0, "desc": "Melee/Ranged, 1d4+2",  "dmg": (1,  4, 2)},
             {"name": "Quarterstaff", "emoji": "🦯", "stat": "str", "extra":  1, "desc": "Melee, 1d6-3",          "dmg": (1,  6,-3)},
         ],
@@ -125,9 +126,10 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "str",
         "speed":       30,
         "weapons": [
-            {"name": "Greataxe", "emoji": "🪓", "stat": "str", "extra": 0, "desc": "Melee, 1d12+2",  "dmg": (1, 12, 2)},
-            {"name": "Handaxe",  "emoji": "🔪", "stat": "str", "extra": 0, "desc": "Melee, 1d6+2",   "dmg": (1,  6, 2)},
-            {"name": "Javelin",  "emoji": "🔱", "stat": "str", "extra": 0, "desc": "Thrown, 1d6+2",  "dmg": (1,  6, 2)},
+            {"name": "Greataxe",     "emoji": "🪓", "stat": "str", "extra": 0, "desc": "Melee, 1d12+2",          "dmg": (1, 12, 2)},
+            {"name": "Handaxe",     "emoji": "🔪", "stat": "str", "extra": 0, "desc": "Melee, 1d6+2",            "dmg": (1,  6, 2)},
+            {"name": "Javelin",     "emoji": "🔱", "stat": "str", "extra": 0, "desc": "Thrown, 1d6+2",           "dmg": (1,  6, 2)},
+            {"name": "Light Crossbow", "emoji": "🎯", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8+1 — 10 bolts", "dmg": (1,  8, 1)},
         ],
     },
     "faye": {
@@ -167,8 +169,12 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "str",
         "speed":       30,
         "weapons": [
-            {"name": "Longsword", "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8+2",  "dmg": (1, 8, 2)},
-            {"name": "Javelin",   "emoji": "🔱", "stat": "str", "extra": 0, "desc": "Thrown, 1d6+2", "dmg": (1, 6, 2)},
+            {"name": "Longsword",     "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8+2",                       "dmg": (1, 8, 2)},
+            {"name": "Javelin",     "emoji": "🔱", "stat": "str", "extra": 0, "desc": "Thrown, 1d6+2",                      "dmg": (1, 6, 2)},
+            {"name": "Divine Smite",   "emoji": "✨", "stat": "cha", "extra": 0, "desc": "1st Level Slot, 2d8 radiant on hit",  "dmg": (2, 8, 0), "kind": "spell", "type": "damage", "has_atk": False},
+            {"name": "Divine Favor",   "emoji": "🌟", "stat": "cha", "extra": 0, "desc": "Concentration, +1d4 radiant per hit", "dmg": (1, 4, 0), "kind": "spell", "type": "damage", "has_atk": False},
+            {"name": "Wrathful Smite", "emoji": "😤", "stat": "cha", "extra": 0, "desc": "Concentration, +1d6 psychic on hit",  "dmg": (1, 6, 0), "kind": "spell", "type": "damage", "has_atk": False},
+            {"name": "Searing Smite",  "emoji": "🔥", "stat": "cha", "extra": 0, "desc": "Concentration, +1d6 fire on hit",     "dmg": (1, 6, 0), "kind": "spell", "type": "damage", "has_atk": False},
         ],
     },
 }
