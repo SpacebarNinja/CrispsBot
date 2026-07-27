@@ -106,9 +106,11 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "dex",
         "speed":       30,
         "weapons": [
-            {"name": "Longbow",    "emoji": "🏹", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8+4",  "dmg": (1, 8, 4)},
-            {"name": "Shortsword", "emoji": "🗡️",  "stat": "dex", "extra": 0, "desc": "Melee, 1d6+4",   "dmg": (1, 6, 4)},
-            {"name": "Talons",     "emoji": "🦅", "stat": "dex", "extra": 0, "desc": "Natural, 1d6+4", "dmg": (1, 6, 4)},
+            {"name": "Longbow",       "emoji": "🏹", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8+4",                      "dmg": (1, 8, 4)},
+            {"name": "Shortsword",    "emoji": "🗡️",  "stat": "dex", "extra": 0, "desc": "Melee, 1d6+4",                       "dmg": (1, 6, 4)},
+            {"name": "Talons",        "emoji": "🦅", "stat": "dex", "extra": 0, "desc": "Natural, 1d6+4",                     "dmg": (1, 6, 4)},
+            {"name": "Hunter's Mark", "emoji": "🎯", "stat": "wis", "extra": 0, "desc": "1st Level Conc., +1d6 per hit",          "dmg": (1, 6, 0), "kind": "spell", "type": "damage", "has_atk": False},
+            {"name": "Cure Wounds",   "emoji": "💚", "stat": "wis", "extra": 0, "desc": "1st Level, 1d8+2 HP healing",            "dmg": (1, 8, 2), "kind": "spell", "type": "heal",   "has_atk": False},
         ],
     },
     "bablino": {
