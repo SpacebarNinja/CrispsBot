@@ -1204,7 +1204,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v5.0.7"
+BOT_VERSION = "v5.0.8"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -1298,18 +1298,18 @@ async def roll_cmd(interaction: discord.Interaction):
 
 @bot.tree.command(name="bag", description="View the whole party's inventory 🎒")
 async def bag_cmd(interaction: discord.Interaction):
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=True)
     inventories = await db.dnd_get_all_inventories()
     embed = dnd.build_bag_embed(inventories)
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="wallet", description="View the party's coins and currency 💰")
 async def wallet_cmd(interaction: discord.Interaction):
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=True)
     inventories = await db.dnd_get_all_inventories()
     embed = dnd.build_wallet_embed(inventories)
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="initiative", description="Roll or manage initiative ⚔️")
@@ -3461,6 +3461,17 @@ async def on_message(message: discord.Message):
             await handle_dm_take(message)
         except Exception as e:
             print(f"[DnD] !take error: {e}")
+        return
+
+    # --- Public !dnd_bag / !dnd_wallet commands ---
+    if message.content.strip().lower() == "!dnd_bag":
+        inventories = await db.dnd_get_all_inventories()
+        await message.channel.send(embed=dnd.build_bag_embed(inventories))
+        return
+
+    if message.content.strip().lower() == "!dnd_wallet":
+        inventories = await db.dnd_get_all_inventories()
+        await message.channel.send(embed=dnd.build_wallet_embed(inventories))
         return
 
     # 1. Consolidated Activity Tracking
