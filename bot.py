@@ -1204,7 +1204,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v5.0.3"
+BOT_VERSION = "v5.0.4"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -3380,8 +3380,8 @@ async def handle_dm_give(message: discord.Message):
         await message.channel.send(pub_text)
 
 
-async def handle_dm_remove(message: discord.Message):
-    """Handle DM's !remove <letter> <item> [amount] chat command."""
+async def handle_dm_take(message: discord.Message):
+    """Handle DM's !take <letter> <item> [amount] chat command."""
     try:
         parts = shlex.split(message.content)
     except ValueError:
@@ -3389,8 +3389,8 @@ async def handle_dm_remove(message: discord.Message):
 
     if len(parts) < 3:
         await message.reply(
-            "❌ Usage: `!remove <letter> <item> [amount]`\n"
-            "*e.g. `!remove V pot1`  or  `!remove V \"Alchemist's Fire\" 1`*",
+            "❌ Usage: `!take <letter> <item> [amount]`\n"
+            "*e.g. `!take V pot1`  or  `!take V \"Alchemist's Fire\" 1`*",
             delete_after=10,
         )
         return
@@ -3447,12 +3447,12 @@ async def on_message(message: discord.Message):
             print(f"[DnD] !give error: {e}")
         return
 
-    # --- DM !remove command ---
-    if message.content.lower().startswith("!remove") and uid == dnd.DM_USER_ID:
+    # --- DM !take command ---
+    if message.content.lower().startswith("!take") and uid == dnd.DM_USER_ID:
         try:
-            await handle_dm_remove(message)
+            await handle_dm_take(message)
         except Exception as e:
-            print(f"[DnD] !remove error: {e}")
+            print(f"[DnD] !take error: {e}")
         return
 
     # 1. Consolidated Activity Tracking
