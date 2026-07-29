@@ -1364,10 +1364,10 @@ ITEM_SHORTHANDS: dict[str, str] = {
     "scroll2":   "Spell Scroll (2nd)",
     "scroll3":   "Spell Scroll (3rd)",
     # Currency
-    "gp":        "Gold Piece",
-    "gold":      "Gold Piece",
-    "sp":        "Silver Piece",
-    "cp":        "Copper Piece",
+    "gp":        "Gold",
+    "gold":      "Gold",
+    "sp":        "Silver",
+    "cp":        "Copper",
     "csc":       "Concord Silver Crown",
     "crown":     "Concord Silver Crown",
 }
@@ -1406,10 +1406,10 @@ CHAR_EMOJIS: dict[str, str] = {
 
 # Currency items with display emojis (ordered: highest → lowest denomination)
 CURRENCY_EMOJIS: dict[str, str] = {
-    "Gold Piece":           "🪙",
+    "Gold":                 "🪙",
     "Concord Silver Crown": "👑",
-    "Silver Piece":         "🔘",
-    "Copper Piece":         "🟤",
+    "Silver":               "🔘",
+    "Copper":               "🟤",
 }
 
 # In-memory initiative state per guild
