@@ -1117,10 +1117,31 @@ class InitiativeButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         view: RollView = self.view
-        effective_adv  = _effective_adv(view.adv_mode, view.active_features, "initiative")
-        result         = fmt_initiative(view.char, effective_adv)
-        await interaction.response.defer(ephemeral=True)
-        await _send_as_char(interaction.channel, view.char_key, result)
+        effective_adv = _effective_adv(view.adv_mode, view.active_features, "initiative")
+        guild_id = str(interaction.guild_id)
+        state    = _get_initiative(guild_id)
+
+        if state.get("message_id"):
+            # Initiative is live — integrate with the embed
+            if any(e.get("char_key") == view.char_key for e in state["entries"]):
+                already = next(e for e in state["entries"] if e.get("char_key") == view.char_key)
+                await interaction.response.send_message(
+                    f"✅ Already rolled initiative — **{already['roll']}**.",
+                    ephemeral=True,
+                )
+                return
+            total, result = roll_initiative(view.char, effective_adv)
+            state["entries"].append({"name": view.char["name"], "roll": total, "type": "player", "char_key": view.char_key})
+            state["entries"] = _sort_initiative(state["entries"])
+            await interaction.response.defer(ephemeral=True)
+            await _send_as_char(interaction.channel, view.char_key, result)
+            await _refresh_initiative_embed(interaction.guild, guild_id)
+        else:
+            # No active initiative — just roll normally
+            result = fmt_initiative(view.char, effective_adv)
+            await interaction.response.defer(ephemeral=True)
+            await _send_as_char(interaction.channel, view.char_key, result)
+
         try:
             await interaction.delete_original_response()
         except Exception:
@@ -1476,8 +1497,9 @@ def build_initiative_embed(entries: list[dict], awaiting: list[str]) -> discord.
         lines = []
         for i, e in enumerate(entries):
             pos = ranks[i] if i < len(ranks) else f"{i+1}th"
-            tag = "  〔player〕" if e["type"] == "player" else ""
-            lines.append(f"`{pos}`  **{e['name']}**  —  **{e['roll']}**{tag}")
+            tag = "  〔enemy〕" if e["type"] == "enemy" else ""
+            display_name = e["name"].split('"')[0].strip().split()[0] if e["type"] == "player" else e["name"]
+            lines.append(f"`{pos}`  **{display_name}**  —  **{e['roll']}**{tag}")
         embed.description = "\n".join(lines)
     if awaiting:
         embed.set_footer(text="⏳ Still rolling: " + ", ".join(awaiting))
@@ -1558,6 +1580,12 @@ class AddEnemyModal(discord.ui.Modal, title="Add Enemy to Initiative"):
         state["entries"] = _sort_initiative(state["entries"])
 
         await interaction.response.defer(ephemeral=True)
+        # Post a public roll message as Dungeon Master
+        roll_text = (
+            f"🎲 **Initiative** *({name})*\n"
+            f"╰ `{roll}` = **{roll}**"
+        )
+        await _send_as_dm(interaction.channel, roll_text)
         await _refresh_initiative_embed(interaction.guild, self.guild_id)
         try:
             await self.mgmt_interaction.edit_original_response(
