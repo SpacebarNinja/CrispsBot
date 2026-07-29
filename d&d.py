@@ -1364,10 +1364,10 @@ ITEM_SHORTHANDS: dict[str, str] = {
     "scroll2":   "Spell Scroll (2nd)",
     "scroll3":   "Spell Scroll (3rd)",
     # Currency
-    "gp":        "Gold",
-    "gold":      "Gold",
-    "sp":        "Silver",
-    "cp":        "Copper",
+    "gp":        "Gold Piece",
+    "gold":      "Gold Piece",
+    "sp":        "Silver Piece",
+    "cp":        "Copper Piece",
     "csc":       "Concord Silver Crown",
     "crown":     "Concord Silver Crown",
 }
@@ -1406,10 +1406,16 @@ CHAR_EMOJIS: dict[str, str] = {
 
 # Currency items with display emojis (ordered: highest → lowest denomination)
 CURRENCY_EMOJIS: dict[str, str] = {
-    "Gold":                 "🪙",
+    "Gold Piece":           "🪙",
     "Concord Silver Crown": "👑",
-    "Silver":               "🔘",
-    "Copper":               "🟤",
+    "Silver Piece":         "🔘",
+    "Copper Piece":         "🟤",
+}
+CURRENCY_LABELS: dict[str, str] = {
+    "Gold Piece":           "Gold",
+    "Concord Silver Crown": "Concord Silver Crown",
+    "Silver Piece":         "Silver",
+    "Copper Piece":         "Copper",
 }
 
 # In-memory initiative state per guild
@@ -1477,7 +1483,7 @@ def build_wallet_embed(inventories: dict[str, dict[str, int]]) -> discord.Embed:
         items = inventories.get(char_key, {})
         emoji = CHAR_EMOJIS.get(char_key, "🎲")
         lines = [
-            f"{cur_emoji} `{items[cur]}` {cur}"
+            f"{cur_emoji} `{items[cur]}` {CURRENCY_LABELS[cur]}"
             for cur, cur_emoji in CURRENCY_EMOJIS.items()
             if cur in items and items[cur] > 0
         ]
