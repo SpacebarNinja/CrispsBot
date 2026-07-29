@@ -1203,7 +1203,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v5.0.0"
+BOT_VERSION = "v5.0.1"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -1297,10 +1297,10 @@ async def roll_cmd(interaction: discord.Interaction):
 
 @bot.tree.command(name="bag", description="View the whole party's inventory 🎒")
 async def bag_cmd(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer()
     inventories = await db.dnd_get_all_inventories()
     embed = dnd.build_bag_embed(inventories)
-    await interaction.followup.send(embed=embed, ephemeral=True)
+    await interaction.followup.send(embed=embed)
 
 
 @bot.tree.command(name="initiative", description="Roll or manage initiative ⚔️")
@@ -3330,25 +3330,25 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
 async def handle_dm_give(message: discord.Message):
     """Handle DM's !give <letter> <item> <amount> chat command."""
     parts = message.content.split()
-    if len(parts) < 4:
+    if len(parts) < 3:
         await message.reply(
-            "❌ Usage: `!give <letter> <item> <amount>`\n"
-            "*e.g. `!give V pot1 2`  →  give Viola 2× Potion of Healing*",
+            "❌ Usage: `!give <letter> <item> [amount]`\n"
+            "*e.g. `!give V pot1` or `!give V pot1 2`*",
             delete_after=10,
         )
         return
 
-    letter    = parts[1].upper()
-    item_raw  = parts[2]
-    amount_str = parts[3]
-
-    try:
-        amount = int(amount_str)
-        if amount <= 0:
-            raise ValueError
-    except ValueError:
-        await message.reply("❌ Amount must be a positive number.", delete_after=8)
-        return
+    letter   = parts[1].upper()
+    item_raw = parts[2]
+    amount   = 1
+    if len(parts) >= 4:
+        try:
+            amount = int(parts[3])
+            if amount <= 0:
+                raise ValueError
+        except ValueError:
+            await message.reply("❌ Amount must be a positive number.", delete_after=8)
+            return
 
     char_key = dnd.PLAYER_LETTERS.get(letter)
     if not char_key:
