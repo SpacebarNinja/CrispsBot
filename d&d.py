@@ -1501,9 +1501,7 @@ def build_initiative_embed(entries: list[dict], awaiting: list[str]) -> discord.
             display_name = e["name"].split('"')[0].strip().split()[0] if e["type"] == "player" else e["name"]
             lines.append(f"`{pos}`  **{display_name}**  —  **{e['roll']}**{tag}")
         embed.description = "\n".join(lines)
-    if awaiting:
-        embed.set_footer(text="⏳ Still rolling: " + ", ".join(awaiting))
-    else:
+    if not awaiting:
         embed.set_footer(text="✅ All players have rolled!")
     return embed
 
