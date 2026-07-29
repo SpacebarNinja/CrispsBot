@@ -1346,6 +1346,8 @@ ITEM_SHORTHANDS: dict[str, str] = {
     "gold":      "Gold Piece",
     "sp":        "Silver Piece",
     "cp":        "Copper Piece",
+    "csc":       "Concord Silver Crown",
+    "crown":     "Concord Silver Crown",
 }
 
 # Healing potions → (dice_count, dice_sides, bonus)  used by /heal
@@ -1364,6 +1366,14 @@ CHAR_EMOJIS: dict[str, str] = {
     "isaiah":  "⚔️",
     "faye":    "🌿",
     "steria":  "🛡️",
+}
+
+# Currency items with display emojis (ordered: highest → lowest denomination)
+CURRENCY_EMOJIS: dict[str, str] = {
+    "Gold Piece":           "🪙",
+    "Concord Silver Crown": "👑",
+    "Silver Piece":         "🔘",
+    "Copper Piece":         "🟤",
 }
 
 # In-memory initiative state per guild
@@ -1401,16 +1411,41 @@ def _awaiting_players(guild_id: str) -> list[str]:
 
 # ─── Embed builders ───────────────────────────────────────────────────────────
 
+def _item_display(item: str, amt: int) -> str:
+    """Format a single inventory line, adding emoji for known item types."""
+    if item in POTION_HEALS or item.startswith("Potion"):
+        return f"`{amt}×` 🧄 {item}"
+    return f"`{amt}×` {item}"
+
+
 def build_bag_embed(inventories: dict[str, dict[str, int]]) -> discord.Embed:
     """Compact embed showing every character's inventory side-by-side."""
     embed = discord.Embed(title="🎒  Party Inventory", color=0xD4A53A)
     for char_key, char in CHARACTERS.items():
         items = inventories.get(char_key, {})
+        # Exclude pure currency items from the bag view
+        non_currency = {k: v for k, v in items.items() if k not in CURRENCY_EMOJIS}
         emoji = CHAR_EMOJIS.get(char_key, "🎲")
         value = (
-            "\n".join(f"`{amt}×` {item}" for item, amt in sorted(items.items()))
-            if items else "*(empty)*"
+            "\n".join(_item_display(item, amt) for item, amt in sorted(non_currency.items()))
+            if non_currency else "*(empty)*"
         )
+        embed.add_field(name=f"{emoji}  {_char_first_name(char)}", value=value, inline=True)
+    return embed
+
+
+def build_wallet_embed(inventories: dict[str, dict[str, int]]) -> discord.Embed:
+    """Embed showing each character's currencies only."""
+    embed = discord.Embed(title="💰  Party Wallet", color=0xF1C40F)
+    for char_key, char in CHARACTERS.items():
+        items = inventories.get(char_key, {})
+        emoji = CHAR_EMOJIS.get(char_key, "🎲")
+        lines = [
+            f"{cur_emoji} `{items[cur]}` {cur}"
+            for cur, cur_emoji in CURRENCY_EMOJIS.items()
+            if cur in items and items[cur] > 0
+        ]
+        value = "\n".join(lines) if lines else "*(empty)*"
         embed.add_field(name=f"{emoji}  {_char_first_name(char)}", value=value, inline=True)
     return embed
 

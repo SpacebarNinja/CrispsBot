@@ -1204,7 +1204,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v5.0.4"
+BOT_VERSION = "v5.0.5"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -1301,6 +1301,14 @@ async def bag_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
     inventories = await db.dnd_get_all_inventories()
     embed = dnd.build_bag_embed(inventories)
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="wallet", description="View the party's coins and currency 💰")
+async def wallet_cmd(interaction: discord.Interaction):
+    await interaction.response.defer()
+    inventories = await db.dnd_get_all_inventories()
+    embed = dnd.build_wallet_embed(inventories)
     await interaction.followup.send(embed=embed)
 
 
