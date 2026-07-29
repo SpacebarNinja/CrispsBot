@@ -1204,7 +1204,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v5.0.6"
+BOT_VERSION = "v5.0.7"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -1367,7 +1367,7 @@ async def initiative_cmd(interaction: discord.Interaction):
         pass
 
 
-@bot.tree.command(name="heal", description="Drink a healing potion from your bag 💊")
+@bot.tree.command(name="heal", description="Use a healing item from your bag 💊")
 async def heal_cmd(interaction: discord.Interaction):
     uid      = str(interaction.user.id)
     char_key = dnd.PLAYER_CHARS.get(uid)
@@ -1376,18 +1376,18 @@ async def heal_cmd(interaction: discord.Interaction):
         return
 
     inventory = await db.dnd_get_inventory(char_key)
-    potions   = {k: v for k, v in inventory.items() if k in dnd.POTION_HEALS}
+    usable    = {k: v for k, v in inventory.items() if k in dnd.USABLE_ITEM_DEFS}
 
-    if not potions:
+    if not usable:
         await interaction.response.send_message(
-            "🧪 You have no healing potions in your bag.", ephemeral=True
+            "💊 You have no usable healing items in your bag.", ephemeral=True
         )
         return
 
     char = dnd.CHARACTERS[char_key]
-    view = dnd.HealView(char_key, potions, db.dnd_remove_item)
+    view = dnd.HealView(char_key, usable, db.dnd_remove_item)
     await interaction.response.send_message(
-        f"*{dnd._char_first_name(char)}'s potions — choose one to drink:*",
+        f"*{dnd._char_first_name(char)}'s items — choose one to use:*",
         view=view,
         ephemeral=True,
     )

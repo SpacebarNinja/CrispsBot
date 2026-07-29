@@ -1337,6 +1337,7 @@ ITEM_SHORTHANDS: dict[str, str] = {
     "tinderbox": "Tinderbox",
     "oil":       "Flask of Oil",
     "bandage":   "Bandage",
+    "hkit":      "Healer's Kit",
     # Spell scrolls
     "scroll1":   "Spell Scroll (1st)",
     "scroll2":   "Spell Scroll (2nd)",
@@ -1356,6 +1357,20 @@ POTION_HEALS: dict[str, tuple[int, int, int]] = {
     "Potion of Greater Healing": (4, 4,  4),
     "Potion of Superior Healing":(8, 4,  8),
     "Potion of Supreme Healing": (10, 4, 20),
+}
+
+# All items usable via /heal
+# type "heal"   → dice: (count, sides, bonus), desc shown in dropdown
+# type "effect" → no dice, effect_text posted publicly
+USABLE_ITEM_DEFS: dict[str, dict] = {
+    "Potion of Healing":         {"type": "heal",   "dice": (2, 4,  2),  "desc": "2d4+2 HP"},
+    "Potion of Greater Healing": {"type": "heal",   "dice": (4, 4,  4),  "desc": "4d4+4 HP"},
+    "Potion of Superior Healing":{"type": "heal",   "dice": (8, 4,  8),  "desc": "8d4+8 HP"},
+    "Potion of Supreme Healing": {"type": "heal",   "dice": (10, 4, 20), "desc": "10d4+20 HP"},
+    "Healer's Kit":              {"type": "heal",   "dice": (1, 6,  4),  "desc": "1d6+4 HP"},
+    "Bandage":                   {"type": "heal",   "dice": (1, 4,  0),  "desc": "1d4 HP"},
+    "Antitoxin":                 {"type": "effect", "desc": "ADV on CON saves vs. poison  ·  1 hour",
+                                  "text": "Used **Antitoxin**.\n╰ Advantage on CON saves vs. **poison** for 1 hour."},
 }
 
 # Class emojis for /bag embed
@@ -1413,8 +1428,7 @@ def _awaiting_players(guild_id: str) -> list[str]:
 
 def _item_display(item: str, amt: int) -> str:
     """Format a single inventory line, adding emoji for known item types."""
-    _MEDICINE = {"Antitoxin", "Healer's Kit", "Bandage"}
-    if item in POTION_HEALS or item.startswith("Potion") or item in _MEDICINE:
+    if item in USABLE_ITEM_DEFS or item.startswith("Potion"):
         return f"`{amt}×` 💊 {item}"
     return f"`{amt}×` {item}"
 
@@ -1598,52 +1612,58 @@ class DMInitiativeView(discord.ui.View):
 # ─── /heal View ───────────────────────────────────────────────────────────────
 
 class HealSelect(discord.ui.Select):
-    def __init__(self, char_key: str, potions: dict[str, int]):
+    def __init__(self, char_key: str, items: dict[str, int]):
         options = []
-        for item_name, amt in sorted(potions.items()):
-            count, sides, bonus = POTION_HEALS[item_name]
-            formula = f"{count}d{sides}+{bonus}"
+        for item_name, amt in sorted(items.items()):
+            defn = USABLE_ITEM_DEFS[item_name]
             options.append(discord.SelectOption(
-                label=f"🧪  {item_name}",
+                label=f"💊  {item_name}",
                 value=item_name,
-                description=f"Restores {formula} HP  ·  {amt} remaining",
+                description=f"{defn['desc']}  ·  {amt} remaining",
             ))
-        super().__init__(placeholder="Choose a healing potion…", options=options, row=0)
+        super().__init__(placeholder="Choose an item to use…", options=options, row=0)
         self.char_key = char_key
 
     async def callback(self, interaction: discord.Interaction):
         self.view.selected_potion = self.values[0]
+        defn = USABLE_ITEM_DEFS[self.values[0]]
+        action = "Using" if defn["type"] == "effect" else "Drinking"
         for item in self.view.children:
             if isinstance(item, HealConfirmButton):
                 item.disabled = False
         await interaction.response.edit_message(
-            content=f"*Drinking **{self.values[0]}**… confirm?*",
+            content=f"*{action} **{self.values[0]}**… confirm?*",
             view=self.view,
         )
 
 
 class HealConfirmButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="💊 Drink!", style=discord.ButtonStyle.success, row=1, disabled=True)
+        super().__init__(label="💊 Use!", style=discord.ButtonStyle.success, row=1, disabled=True)
 
     async def callback(self, interaction: discord.Interaction):
         view: HealView = self.view
-        potion = view.selected_potion
-        if not potion:
+        item_name = view.selected_potion
+        if not item_name:
             await interaction.response.defer(ephemeral=True)
             return
-        success = await view._remove_fn(view.char_key, potion, 1)
+        success = await view._remove_fn(view.char_key, item_name, 1)
         if not success:
-            await interaction.response.send_message("❌ You don't have that potion anymore!", ephemeral=True)
+            await interaction.response.send_message("❌ You don't have that item anymore!", ephemeral=True)
             return
-        count, sides, bonus = POTION_HEALS[potion]
-        rolls = roll_dice(count, sides)
-        total = sum(rolls) + bonus
-        roll_str = " + ".join(f"`{r}`" for r in rolls)
-        text = (
-            f"🧪 **{potion}**\n"
-            f"╰ {roll_str} +{bonus} = **+{total} HP** restored"
-        )
+        defn = USABLE_ITEM_DEFS[item_name]
+        if defn["type"] == "effect":
+            text = f"💊 {defn['text']}"
+        else:
+            count, sides, bonus = defn["dice"]
+            rolls = roll_dice(count, sides)
+            total = sum(rolls) + bonus
+            roll_str = " + ".join(f"`{r}`" for r in rolls)
+            mod_str = f" +{bonus}" if bonus else ""
+            text = (
+                f"💊 **{item_name}**\n"
+                f"╰ {roll_str}{mod_str} = **+{total} HP** restored"
+            )
         await interaction.response.defer(ephemeral=True)
         await _send_as_char(interaction.channel, view.char_key, text)
         try:
@@ -1653,12 +1673,12 @@ class HealConfirmButton(discord.ui.Button):
 
 
 class HealView(discord.ui.View):
-    def __init__(self, char_key: str, potions: dict[str, int], remove_fn):
+    def __init__(self, char_key: str, items: dict[str, int], remove_fn):
         super().__init__(timeout=60)
         self.char_key = char_key
         self.selected_potion: str | None = None
         self._remove_fn = remove_fn
-        self.add_item(HealSelect(char_key, potions))
+        self.add_item(HealSelect(char_key, items))
         self.add_item(HealConfirmButton())
 
     async def on_timeout(self):
