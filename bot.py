@@ -1204,7 +1204,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v5.0.2"
+BOT_VERSION = "v5.0.3"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -3380,6 +3380,58 @@ async def handle_dm_give(message: discord.Message):
         await message.channel.send(pub_text)
 
 
+async def handle_dm_remove(message: discord.Message):
+    """Handle DM's !remove <letter> <item> [amount] chat command."""
+    try:
+        parts = shlex.split(message.content)
+    except ValueError:
+        parts = message.content.split()
+
+    if len(parts) < 3:
+        await message.reply(
+            "❌ Usage: `!remove <letter> <item> [amount]`\n"
+            "*e.g. `!remove V pot1`  or  `!remove V \"Alchemist's Fire\" 1`*",
+            delete_after=10,
+        )
+        return
+
+    letter   = parts[1].upper()
+    item_raw = parts[2]
+    amount   = 1
+    if len(parts) >= 4:
+        try:
+            amount = int(parts[3])
+            if amount <= 0:
+                raise ValueError
+        except ValueError:
+            await message.reply("❌ Amount must be a positive number.", delete_after=8)
+            return
+
+    char_key = dnd.PLAYER_LETTERS.get(letter)
+    if not char_key:
+        valid = "  ".join(f"`{k}`={v.capitalize()}" for k, v in dnd.PLAYER_LETTERS.items())
+        await message.reply(f"❌ Unknown player `{letter}`. Valid: {valid}", delete_after=10)
+        return
+
+    item_name  = dnd.resolve_item_name(item_raw)
+    char       = dnd.CHARACTERS[char_key]
+    first_name = dnd._char_first_name(char)
+
+    success = await db.dnd_remove_item(char_key, item_name, amount)
+    await message.delete()
+
+    if success:
+        pub_text = f"🗑️ **{first_name}** lost **{amount}× {item_name}**."
+    else:
+        pub_text = f"⚠️ **{first_name}** doesn't have enough **{item_name}** to remove."
+
+    wh_channel = message.channel.parent if isinstance(message.channel, discord.Thread) else message.channel
+    if isinstance(wh_channel, discord.TextChannel):
+        await dnd._send_as_dm(message.channel, pub_text)
+    else:
+        await message.channel.send(pub_text)
+
+
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
@@ -3393,6 +3445,14 @@ async def on_message(message: discord.Message):
             await handle_dm_give(message)
         except Exception as e:
             print(f"[DnD] !give error: {e}")
+        return
+
+    # --- DM !remove command ---
+    if message.content.lower().startswith("!remove") and uid == dnd.DM_USER_ID:
+        try:
+            await handle_dm_remove(message)
+        except Exception as e:
+            print(f"[DnD] !remove error: {e}")
         return
 
     # 1. Consolidated Activity Tracking
