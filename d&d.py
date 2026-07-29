@@ -1413,8 +1413,9 @@ def _awaiting_players(guild_id: str) -> list[str]:
 
 def _item_display(item: str, amt: int) -> str:
     """Format a single inventory line, adding emoji for known item types."""
-    if item in POTION_HEALS or item.startswith("Potion"):
-        return f"`{amt}×` 🧪 {item}"
+    _MEDICINE = {"Antitoxin", "Healer's Kit", "Bandage"}
+    if item in POTION_HEALS or item.startswith("Potion") or item in _MEDICINE:
+        return f"`{amt}×` 💊 {item}"
     return f"`{amt}×` {item}"
 
 
