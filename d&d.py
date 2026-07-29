@@ -404,6 +404,18 @@ def fmt_initiative(char: dict, adv_mode=None) -> str:
     )
 
 
+def roll_initiative(char: dict, adv_mode=None) -> tuple[int, str]:
+    """Roll initiative and return (total, formatted_text)."""
+    mod = _mod(char["dex"])
+    roll, adv_note = _d20_with_mode(adv_mode)
+    total = roll + mod
+    text = (
+        f"🎲 **Initiative**{_adv_suffix(adv_mode)}{_crit_tag(roll)}\n"
+        f"╰ `{roll}`{adv_note} {_fmt_mod(mod)} *(DEX)* = **{total}**"
+    )
+    return total, text
+
+
 def fmt_death_save(adv_mode=None) -> str:
     roll, adv_note = _d20_with_mode(adv_mode)
     if roll == 20:
@@ -1290,3 +1302,425 @@ async def process_quote(message: discord.Message) -> bool:
         return False
 
 # /roll is registered directly in bot.py via @bot.tree.command, same as all other commands.
+
+# ======================== INVENTORY & INITIATIVE SYSTEM ========================
+
+# Player letter shortcodes → char_key  (for !give DM chat command)
+PLAYER_LETTERS: dict[str, str] = {
+    "V": "viola",
+    "A": "aeran",
+    "B": "bablino",
+    "I": "isaiah",
+    "F": "faye",
+    "S": "steria",
+}
+
+# Item shorthands → full display name
+ITEM_SHORTHANDS: dict[str, str] = {
+    # Healing potions
+    "pot1": "Potion of Healing",
+    "pot2": "Potion of Greater Healing",
+    "pot3": "Potion of Superior Healing",
+    "pot4": "Potion of Supreme Healing",
+    # Ammo
+    "arrow":     "Arrow",
+    "arrows":    "Arrow",
+    "bolt":      "Crossbow Bolt",
+    "bolts":     "Crossbow Bolt",
+    "dart":      "Dart",
+    "darts":     "Dart",
+    # Common gear
+    "torch":     "Torch",
+    "rope":      "Hempen Rope (50ft)",
+    "ration":    "Ration",
+    "antitoxin": "Antitoxin",
+    "tinderbox": "Tinderbox",
+    "oil":       "Flask of Oil",
+    "bandage":   "Bandage",
+    # Spell scrolls
+    "scroll1":   "Spell Scroll (1st)",
+    "scroll2":   "Spell Scroll (2nd)",
+    "scroll3":   "Spell Scroll (3rd)",
+    # Currency
+    "gp":        "Gold Piece",
+    "gold":      "Gold Piece",
+    "sp":        "Silver Piece",
+    "cp":        "Copper Piece",
+}
+
+# Healing potions → (dice_count, dice_sides, bonus)  used by /heal
+POTION_HEALS: dict[str, tuple[int, int, int]] = {
+    "Potion of Healing":         (2, 4,  2),
+    "Potion of Greater Healing": (4, 4,  4),
+    "Potion of Superior Healing":(8, 4,  8),
+    "Potion of Supreme Healing": (10, 4, 20),
+}
+
+# Class emojis for /bag embed
+CHAR_EMOJIS: dict[str, str] = {
+    "viola":   "🪄",
+    "aeran":   "🏹",
+    "bablino": "🪓",
+    "isaiah":  "⚔️",
+    "faye":    "🌿",
+    "steria":  "🛡️",
+}
+
+# In-memory initiative state per guild
+# guild_id → {"entries": [...], "channel_id": int|None, "message_id": int|None}
+_initiative_state: dict[str, dict] = {}
+
+
+def resolve_item_name(raw: str) -> str:
+    """Convert a shorthand (e.g. 'pot1') to its full item name, or return the raw string."""
+    return ITEM_SHORTHANDS.get(raw.lower(), raw)
+
+
+def _char_first_name(char: dict) -> str:
+    """Return a character's casual first name, stripping nicknames in quotes."""
+    return char["name"].split('"')[0].strip().split()[0]
+
+
+def _get_initiative(guild_id: str) -> dict:
+    if guild_id not in _initiative_state:
+        _initiative_state[guild_id] = {"entries": [], "channel_id": None, "message_id": None}
+    return _initiative_state[guild_id]
+
+
+def _sort_initiative(entries: list[dict]) -> list[dict]:
+    """Sort by roll descending; ties: players beat enemies (5e RAW)."""
+    return sorted(entries, key=lambda e: (e["roll"], 1 if e["type"] == "player" else 0), reverse=True)
+
+
+def _awaiting_players(guild_id: str) -> list[str]:
+    """First names of players who haven't rolled initiative yet."""
+    state = _get_initiative(guild_id)
+    rolled = {e["char_key"] for e in state["entries"] if e.get("char_key")}
+    return [_char_first_name(char) for key, char in CHARACTERS.items() if key not in rolled]
+
+
+# ─── Embed builders ───────────────────────────────────────────────────────────
+
+def build_bag_embed(inventories: dict[str, dict[str, int]]) -> discord.Embed:
+    """Compact embed showing every character's inventory side-by-side."""
+    embed = discord.Embed(title="🎒  Party Inventory", color=0xD4A53A)
+    for char_key, char in CHARACTERS.items():
+        items = inventories.get(char_key, {})
+        emoji = CHAR_EMOJIS.get(char_key, "🎲")
+        value = (
+            "\n".join(f"`{amt}×` {item}" for item, amt in sorted(items.items()))
+            if items else "*(empty)*"
+        )
+        embed.add_field(name=f"{emoji}  {_char_first_name(char)}", value=value, inline=True)
+    return embed
+
+
+def build_initiative_embed(entries: list[dict], awaiting: list[str]) -> discord.Embed:
+    """Build the live initiative-order embed."""
+    embed = discord.Embed(title="⚔️  Initiative Order", color=0xC0392B)
+    if not entries:
+        embed.description = "*No one has rolled yet. Waiting for players…*"
+    else:
+        ranks = ["1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th",
+                 "11th","12th","13th","14th","15th","16th","17th","18th","19th","20th"]
+        lines = []
+        for i, e in enumerate(entries):
+            pos = ranks[i] if i < len(ranks) else f"{i+1}th"
+            tag = "  〔player〕" if e["type"] == "player" else ""
+            lines.append(f"`{pos}`  **{e['name']}**  —  **{e['roll']}**{tag}")
+        embed.description = "\n".join(lines)
+    if awaiting:
+        embed.set_footer(text="⏳ Still rolling: " + ", ".join(awaiting))
+    else:
+        embed.set_footer(text="✅ All players have rolled!")
+    return embed
+
+
+def _dm_initiative_content(guild_id: str) -> str:
+    """Status text for the DM's ephemeral initiative manager."""
+    state = _get_initiative(guild_id)
+    enemies = [e for e in state["entries"] if e["type"] == "enemy"]
+    players = [e for e in state["entries"] if e["type"] == "player"]
+    lines = ["*⚔️  Dungeon Master — Initiative Manager*"]
+    if enemies:
+        lines.append("-# 🗡️ " + "  ·  ".join(f"**{e['name']}** `{e['roll']}`" for e in enemies))
+    else:
+        lines.append("-# 🗡️ No enemies added yet")
+    if players:
+        lines.append("-# 🧝 Rolled: " + "  ·  ".join(
+            f"**{e['name'].split()[0]}** `{e['roll']}`" for e in players))
+    awaiting = _awaiting_players(guild_id)
+    if awaiting:
+        lines.append("-# ⏳ Awaiting: " + ", ".join(awaiting))
+    if state["message_id"]:
+        lines.append("-# ✅ Initiative embed is live")
+    return "\n".join(lines)
+
+
+async def _refresh_initiative_embed(guild: discord.Guild, guild_id: str) -> None:
+    """Re-render the live initiative embed after any state change."""
+    state = _get_initiative(guild_id)
+    if not state["channel_id"] or not state["message_id"]:
+        return
+    try:
+        channel = guild.get_channel(state["channel_id"])
+        if channel:
+            msg = await channel.fetch_message(state["message_id"])
+            await msg.edit(embed=build_initiative_embed(state["entries"], _awaiting_players(guild_id)))
+    except Exception as e:
+        print(f"[DnD] Initiative embed refresh failed: {e}")
+
+
+# ─── Initiative Views ─────────────────────────────────────────────────────────
+
+class AddEnemyModal(discord.ui.Modal, title="Add Enemy to Initiative"):
+    enemy_name = discord.ui.TextInput(
+        label="Enemy Name",
+        placeholder="e.g.  Goblin Rogue,  Skeleton,  Cultist",
+        max_length=60,
+    )
+    enemy_roll = discord.ui.TextInput(
+        label="Initiative Roll  (blank = auto-roll d20)",
+        required=False,
+        placeholder="Leave blank to auto-roll",
+        max_length=4,
+    )
+
+    def __init__(self, guild_id: str, mgmt_interaction: discord.Interaction):
+        super().__init__()
+        self.guild_id = guild_id
+        self.mgmt_interaction = mgmt_interaction
+
+    async def on_submit(self, interaction: discord.Interaction):
+        name = self.enemy_name.value.strip()
+        raw  = self.enemy_roll.value.strip()
+        if raw:
+            try:
+                roll = max(1, min(30, int(raw)))
+            except ValueError:
+                await interaction.response.send_message("❌ Roll must be a number.", ephemeral=True)
+                return
+        else:
+            roll = random.randint(1, 20)
+
+        state = _get_initiative(self.guild_id)
+        state["entries"].append({"name": name, "roll": roll, "type": "enemy", "char_key": None})
+        state["entries"] = _sort_initiative(state["entries"])
+
+        await interaction.response.defer(ephemeral=True)
+        await _refresh_initiative_embed(interaction.guild, self.guild_id)
+        try:
+            await self.mgmt_interaction.edit_original_response(
+                content=_dm_initiative_content(self.guild_id)
+            )
+        except Exception:
+            pass
+
+
+class DMInitiativeView(discord.ui.View):
+    def __init__(self, guild_id: str, mgmt_interaction: discord.Interaction):
+        super().__init__(timeout=1800)  # 30 min
+        self.guild_id = guild_id
+        self.mgmt_interaction = mgmt_interaction
+
+    @discord.ui.button(label="➕ Add Enemy", style=discord.ButtonStyle.primary, row=0)
+    async def add_enemy_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(AddEnemyModal(self.guild_id, self.mgmt_interaction))
+
+    @discord.ui.button(label="⚡ Start Initiative", style=discord.ButtonStyle.success, row=0)
+    async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        state = _get_initiative(self.guild_id)
+        embed = build_initiative_embed(state["entries"], _awaiting_players(self.guild_id))
+        await interaction.response.defer(ephemeral=True)
+        msg = await interaction.channel.send(embed=embed)
+        state["channel_id"] = interaction.channel.id
+        state["message_id"]  = msg.id
+        button.label = "🔄 Restart"
+        button.style = discord.ButtonStyle.secondary
+        try:
+            await self.mgmt_interaction.edit_original_response(
+                content=_dm_initiative_content(self.guild_id),
+                view=self,
+            )
+        except Exception:
+            pass
+
+    @discord.ui.button(label="🗑️ Clear All", style=discord.ButtonStyle.danger, row=0)
+    async def clear_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        _initiative_state.pop(self.guild_id, None)
+        new_view = DMInitiativeView(self.guild_id, self.mgmt_interaction)
+        await interaction.response.edit_message(
+            content="*⚔️  Initiative cleared. Ready for the next encounter.*",
+            view=new_view,
+        )
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
+# ─── /heal View ───────────────────────────────────────────────────────────────
+
+class HealSelect(discord.ui.Select):
+    def __init__(self, char_key: str, potions: dict[str, int]):
+        options = []
+        for item_name, amt in sorted(potions.items()):
+            count, sides, bonus = POTION_HEALS[item_name]
+            formula = f"{count}d{sides}+{bonus}"
+            options.append(discord.SelectOption(
+                label=f"🧪  {item_name}",
+                value=item_name,
+                description=f"Restores {formula} HP  ·  {amt} remaining",
+            ))
+        super().__init__(placeholder="Choose a healing potion…", options=options, row=0)
+        self.char_key = char_key
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_potion = self.values[0]
+        for item in self.view.children:
+            if isinstance(item, HealConfirmButton):
+                item.disabled = False
+        await interaction.response.edit_message(
+            content=f"*Drinking **{self.values[0]}**… confirm?*",
+            view=self.view,
+        )
+
+
+class HealConfirmButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="💊 Drink!", style=discord.ButtonStyle.success, row=1, disabled=True)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: HealView = self.view
+        potion = view.selected_potion
+        if not potion:
+            await interaction.response.defer(ephemeral=True)
+            return
+        success = await view._remove_fn(view.char_key, potion, 1)
+        if not success:
+            await interaction.response.send_message("❌ You don't have that potion anymore!", ephemeral=True)
+            return
+        count, sides, bonus = POTION_HEALS[potion]
+        rolls = roll_dice(count, sides)
+        total = sum(rolls) + bonus
+        roll_str = " + ".join(f"`{r}`" for r in rolls)
+        text = (
+            f"🧪 **{potion}**\n"
+            f"╰ {roll_str} +{bonus} = **+{total} HP** restored"
+        )
+        await interaction.response.defer(ephemeral=True)
+        await _send_as_char(interaction.channel, view.char_key, text)
+        try:
+            await interaction.delete_original_response()
+        except Exception:
+            pass
+
+
+class HealView(discord.ui.View):
+    def __init__(self, char_key: str, potions: dict[str, int], remove_fn):
+        super().__init__(timeout=60)
+        self.char_key = char_key
+        self.selected_potion: str | None = None
+        self._remove_fn = remove_fn
+        self.add_item(HealSelect(char_key, potions))
+        self.add_item(HealConfirmButton())
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
+# ─── /give Player View ────────────────────────────────────────────────────────
+
+class GiveItemSelect(discord.ui.Select):
+    def __init__(self, char_key: str, items: dict[str, int]):
+        options = [
+            discord.SelectOption(label=name, value=name, description=f"{amt} in bag")
+            for name, amt in sorted(items.items())
+        ]
+        super().__init__(placeholder="What to give?", options=options, row=0)
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_item = self.values[0]
+        _sync_give_defaults(self.view, self, self.values[0])
+        _check_give_confirm(self.view)
+        await interaction.response.edit_message(view=self.view)
+
+
+class GiveRecipientSelect(discord.ui.Select):
+    def __init__(self, giver_key: str):
+        options = [
+            discord.SelectOption(
+                label=_char_first_name(char),
+                value=char_key,
+                description=char["cls"],
+            )
+            for char_key, char in CHARACTERS.items()
+            if char_key != giver_key
+        ]
+        super().__init__(placeholder="Give to…", options=options, row=1)
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_recipient = self.values[0]
+        _sync_give_defaults(self.view, self, self.values[0])
+        _check_give_confirm(self.view)
+        await interaction.response.edit_message(view=self.view)
+
+
+def _sync_give_defaults(view, active_select, val: str) -> None:
+    for item in view.children:
+        if not isinstance(item, (GiveItemSelect, GiveRecipientSelect)):
+            continue
+        for opt in item.options:
+            opt.default = (item is active_select and opt.value == val)
+
+
+def _check_give_confirm(view) -> None:
+    for item in view.children:
+        if isinstance(item, GiveConfirmButton):
+            item.disabled = not (view.selected_item and view.selected_recipient)
+
+
+class GiveConfirmButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="🤝 Give 1×", style=discord.ButtonStyle.success, row=2, disabled=True)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: GiveView = self.view
+        if not view.selected_item or not view.selected_recipient:
+            await interaction.response.defer(ephemeral=True)
+            return
+        success = await view._remove_fn(view.char_key, view.selected_item, 1)
+        if not success:
+            await interaction.response.send_message("❌ You don't have that item anymore!", ephemeral=True)
+            return
+        await view._add_fn(view.selected_recipient, view.selected_item, 1)
+        giver = CHARACTERS[view.char_key]
+        recip = CHARACTERS[view.selected_recipient]
+        text = (
+            f"🤝 **{_char_first_name(giver)}** gave "
+            f"**1× {view.selected_item}** to **{_char_first_name(recip)}**."
+        )
+        await interaction.response.defer(ephemeral=True)
+        await _send_as_char(interaction.channel, view.char_key, text)
+        try:
+            await interaction.delete_original_response()
+        except Exception:
+            pass
+
+
+class GiveView(discord.ui.View):
+    def __init__(self, char_key: str, items: dict[str, int], remove_fn, add_fn):
+        super().__init__(timeout=60)
+        self.char_key = char_key
+        self.selected_item: str | None = None
+        self.selected_recipient: str | None = None
+        self._remove_fn = remove_fn
+        self._add_fn    = add_fn
+        self.add_item(GiveItemSelect(char_key, items))
+        self.add_item(GiveRecipientSelect(char_key))
+        self.add_item(GiveConfirmButton())
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True

@@ -1203,7 +1203,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v4.5.8"
+BOT_VERSION = "v5.0.0"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -1290,6 +1290,119 @@ async def roll_cmd(interaction: discord.Interaction):
     view = dnd.RollView(char_key, char, interaction)
     await interaction.response.send_message(
         f"*Rolling as **{char['name']}** — {char['cls']}...*",
+        view=view,
+        ephemeral=True,
+    )
+
+
+@bot.tree.command(name="bag", description="View the whole party's inventory 🎒")
+async def bag_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    inventories = await db.dnd_get_all_inventories()
+    embed = dnd.build_bag_embed(inventories)
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="initiative", description="Roll or manage initiative ⚔️")
+async def initiative_cmd(interaction: discord.Interaction):
+    uid      = str(interaction.user.id)
+    guild_id = str(interaction.guild_id)
+
+    # DM gets the management panel
+    if uid == dnd.DM_USER_ID:
+        view = dnd.DMInitiativeView(guild_id, interaction)
+        await interaction.response.send_message(
+            dnd._dm_initiative_content(guild_id),
+            view=view,
+            ephemeral=True,
+        )
+        return
+
+    # Player: must have a character
+    char_key = dnd.PLAYER_CHARS.get(uid)
+    if not char_key:
+        await interaction.response.send_message(
+            "❌ You don't have a character — ask the DM!", ephemeral=True
+        )
+        return
+
+    # Initiative embed must be live
+    state = dnd._get_initiative(guild_id)
+    if not state.get("message_id"):
+        await interaction.response.send_message(
+            "❌ The DM hasn't started initiative yet!", ephemeral=True
+        )
+        return
+
+    # Prevent double-rolling
+    if any(e.get("char_key") == char_key for e in state["entries"]):
+        already = next(e for e in state["entries"] if e.get("char_key") == char_key)
+        await interaction.response.send_message(
+            f"✅ Already rolled — **{already['roll']}**. Wait for the DM to clear it.",
+            ephemeral=True,
+        )
+        return
+
+    char = dnd.CHARACTERS[char_key]
+    total, text = dnd.roll_initiative(char)
+
+    state["entries"].append({"name": char["name"], "roll": total, "type": "player", "char_key": char_key})
+    state["entries"] = dnd._sort_initiative(state["entries"])
+
+    await interaction.response.defer(ephemeral=True)
+    await dnd._send_as_char(interaction.channel, char_key, text)
+    await dnd._refresh_initiative_embed(interaction.guild, guild_id)
+    try:
+        await interaction.delete_original_response()
+    except Exception:
+        pass
+
+
+@bot.tree.command(name="heal", description="Drink a healing potion from your bag 💊")
+async def heal_cmd(interaction: discord.Interaction):
+    uid      = str(interaction.user.id)
+    char_key = dnd.PLAYER_CHARS.get(uid)
+    if not char_key:
+        await interaction.response.send_message("❌ You don't have a character!", ephemeral=True)
+        return
+
+    inventory = await db.dnd_get_inventory(char_key)
+    potions   = {k: v for k, v in inventory.items() if k in dnd.POTION_HEALS}
+
+    if not potions:
+        await interaction.response.send_message(
+            "🧪 You have no healing potions in your bag.", ephemeral=True
+        )
+        return
+
+    char = dnd.CHARACTERS[char_key]
+    view = dnd.HealView(char_key, potions, db.dnd_remove_item)
+    await interaction.response.send_message(
+        f"*{dnd._char_first_name(char)}'s potions — choose one to drink:*",
+        view=view,
+        ephemeral=True,
+    )
+
+
+@bot.tree.command(name="give", description="Give an item from your bag to a party member 🤝")
+async def give_cmd(interaction: discord.Interaction):
+    uid      = str(interaction.user.id)
+    char_key = dnd.PLAYER_CHARS.get(uid)
+    if not char_key:
+        await interaction.response.send_message("❌ You don't have a character!", ephemeral=True)
+        return
+
+    inventory = await db.dnd_get_inventory(char_key)
+    if not inventory:
+        await interaction.response.send_message(
+            "🎒 Your bag is empty — nothing to give!", ephemeral=True
+        )
+        return
+
+    char = dnd.CHARACTERS[char_key]
+    view = dnd.GiveView(char_key, inventory, db.dnd_remove_item, db.dnd_add_item)
+    await interaction.response.send_message(
+        f"*{dnd._char_first_name(char)}'s bag — select an item and a recipient:*",
         view=view,
         ephemeral=True,
     )
@@ -3212,12 +3325,67 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
         print(f"[ReactionRole] Failed to remove role: {e}")
 
 
+# ======================== DM !give HANDLER ========================
+
+async def handle_dm_give(message: discord.Message):
+    """Handle DM's !give <letter> <item> <amount> chat command."""
+    parts = message.content.split()
+    if len(parts) < 4:
+        await message.reply(
+            "❌ Usage: `!give <letter> <item> <amount>`\n"
+            "*e.g. `!give V pot1 2`  →  give Viola 2× Potion of Healing*",
+            delete_after=10,
+        )
+        return
+
+    letter    = parts[1].upper()
+    item_raw  = parts[2]
+    amount_str = parts[3]
+
+    try:
+        amount = int(amount_str)
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.reply("❌ Amount must be a positive number.", delete_after=8)
+        return
+
+    char_key = dnd.PLAYER_LETTERS.get(letter)
+    if not char_key:
+        valid = "  ".join(f"`{k}`={v.capitalize()}" for k, v in dnd.PLAYER_LETTERS.items())
+        await message.reply(f"❌ Unknown player `{letter}`. Valid: {valid}", delete_after=10)
+        return
+
+    item_name  = dnd.resolve_item_name(item_raw)
+    char       = dnd.CHARACTERS[char_key]
+    first_name = dnd._char_first_name(char)
+
+    await db.dnd_add_item(char_key, item_name, amount)
+    await message.delete()
+
+    pub_text = f"🎒 **{first_name}** received **{amount}× {item_name}**."
+
+    wh_channel = message.channel.parent if isinstance(message.channel, discord.Thread) else message.channel
+    if isinstance(wh_channel, discord.TextChannel):
+        await dnd._send_as_dm(message.channel, pub_text)
+    else:
+        await message.channel.send(pub_text)
+
+
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
         return
     gid = str(message.guild.id)
     uid = str(message.author.id)
+
+    # --- DM !give command ---
+    if message.content.lower().startswith("!give") and uid == dnd.DM_USER_ID:
+        try:
+            await handle_dm_give(message)
+        except Exception as e:
+            print(f"[DnD] !give error: {e}")
+        return
 
     # 1. Consolidated Activity Tracking
     try:

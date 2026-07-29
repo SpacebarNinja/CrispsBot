@@ -223,6 +223,13 @@ async def init():
                 updated_at TEXT DEFAULT '',
                 PRIMARY KEY (guild_id, user_id)
             );
+
+            CREATE TABLE IF NOT EXISTS dnd_inventory (
+                char_key TEXT NOT NULL,
+                item_name TEXT NOT NULL,
+                amount INTEGER DEFAULT 0,
+                PRIMARY KEY (char_key, item_name)
+            );
         """)
         await conn.commit()
         
@@ -751,3 +758,59 @@ async def set_typology_field(guild_id: str, user_id: str, field: str, value: str
             (value, datetime.now(timezone.utc).isoformat(), guild_id, user_id)
         )
         await conn.commit()
+
+
+# ==================== D&D INVENTORY ====================
+
+async def dnd_get_inventory(char_key: str) -> dict[str, int]:
+    """Return {item_name: amount} for a character (only items with amount > 0)."""
+    async with get_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT item_name, amount FROM dnd_inventory WHERE char_key = ? AND amount > 0 ORDER BY item_name",
+            (char_key,)
+        )
+        rows = await cursor.fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+async def dnd_get_all_inventories() -> dict[str, dict[str, int]]:
+    """Return {char_key: {item_name: amount}} for all characters."""
+    async with get_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT char_key, item_name, amount FROM dnd_inventory WHERE amount > 0 ORDER BY char_key, item_name"
+        )
+        rows = await cursor.fetchall()
+    result: dict[str, dict[str, int]] = {}
+    for char_key, item_name, amount in rows:
+        result.setdefault(char_key, {})[item_name] = amount
+    return result
+
+
+async def dnd_add_item(char_key: str, item_name: str, amount: int) -> None:
+    """Add `amount` of an item to a character's inventory (upsert)."""
+    async with get_connection() as conn:
+        await conn.execute(
+            """INSERT INTO dnd_inventory (char_key, item_name, amount)
+               VALUES (?, ?, ?)
+               ON CONFLICT(char_key, item_name) DO UPDATE SET amount = amount + excluded.amount""",
+            (char_key, item_name, amount)
+        )
+        await conn.commit()
+
+
+async def dnd_remove_item(char_key: str, item_name: str, amount: int) -> bool:
+    """Remove `amount` of an item. Returns False if insufficient stock."""
+    async with get_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT amount FROM dnd_inventory WHERE char_key = ? AND item_name = ?",
+            (char_key, item_name)
+        )
+        row = await cursor.fetchone()
+        if not row or row[0] < amount:
+            return False
+        await conn.execute(
+            "UPDATE dnd_inventory SET amount = amount - ? WHERE char_key = ? AND item_name = ?",
+            (amount, char_key, item_name)
+        )
+        await conn.commit()
+    return True
