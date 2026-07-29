@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Optional
 import os
+import shlex
 import yaml
 from pathlib import Path
 from collections import deque
@@ -3328,12 +3329,19 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
 # ======================== DM !give HANDLER ========================
 
 async def handle_dm_give(message: discord.Message):
-    """Handle DM's !give <letter> <item> <amount> chat command."""
-    parts = message.content.split()
+    """Handle DM's !give <letter> <item> [amount] chat command.
+    Item names with spaces must be quoted: !give V "Potion of Neutralize Poison"
+    """
+    try:
+        parts = shlex.split(message.content)
+    except ValueError:
+        # Unmatched quote — fall back to plain split
+        parts = message.content.split()
+
     if len(parts) < 3:
         await message.reply(
             "❌ Usage: `!give <letter> <item> [amount]`\n"
-            "*e.g. `!give V pot1` or `!give V pot1 2`*",
+            "*e.g. `!give V pot1`  or  `!give V \"Potion of Neutralize Poison\" 2`*",
             delete_after=10,
         )
         return
