@@ -1204,7 +1204,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v5.1.2"
+BOT_VERSION = "v5.1.3"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -1299,17 +1299,25 @@ async def roll_cmd(interaction: discord.Interaction):
 @bot.tree.command(name="bag", description="View the whole party's inventory 🎒")
 async def bag_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    inventories = await db.dnd_get_all_inventories()
-    embed = dnd.build_bag_embed(inventories)
-    await interaction.followup.send(embed=embed, ephemeral=True)
+    try:
+        inventories = await db.dnd_get_all_inventories()
+        embed = dnd.build_bag_embed(inventories)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    except Exception as e:
+        print(f"[bag] error: {e}")
+        await interaction.followup.send(f"⚠️ Error loading bag: `{e}`", ephemeral=True)
 
 
 @bot.tree.command(name="wallet", description="View the party's coins and currency 💰")
 async def wallet_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    inventories = await db.dnd_get_all_inventories()
-    embed = dnd.build_wallet_embed(inventories)
-    await interaction.followup.send(embed=embed, ephemeral=True)
+    try:
+        inventories = await db.dnd_get_all_inventories()
+        embed = dnd.build_wallet_embed(inventories)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    except Exception as e:
+        print(f"[wallet] error: {e}")
+        await interaction.followup.send(f"⚠️ Error loading wallet: `{e}`", ephemeral=True)
 
 
 @bot.tree.command(name="initiative", description="Roll or manage initiative ⚔️")
