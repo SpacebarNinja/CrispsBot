@@ -96,34 +96,29 @@ class TursoConnection:
             await asyncio.to_thread(self._conn.commit)
     
     async def close(self):
-        pass # Turso connections are reused, don't close
-
-
-# Global persistent connection for Turso
-_turso_conn = None
-_turso_lock = asyncio.Lock()
+        try:
+            await asyncio.to_thread(self._conn.close)
+        except Exception:
+            pass
 
 
 async def _get_turso_connection():
-    """Get or create the persistent Turso connection."""
-    global _turso_conn
-    
-    async with _turso_lock:
-        if _turso_conn is None:
-            def _connect():
-                return libsql.connect(TURSO_URL, auth_token=TURSO_TOKEN)
-            conn = await asyncio.to_thread(_connect)
-            _turso_conn = TursoConnection(conn)
-            print("[DB] Created persistent Turso connection")
-        return _turso_conn
+    """Create a fresh Turso connection each time (streams expire, caching causes 404s)."""
+    def _connect():
+        return libsql.connect(TURSO_URL, auth_token=TURSO_TOKEN)
+    raw_conn = await asyncio.to_thread(_connect)
+    return TursoConnection(raw_conn), raw_conn
 
 
 @asynccontextmanager
 async def get_connection():
     """Get a database connection - works with both Turso and local SQLite"""
     if USE_TURSO:
-        wrapper = await _get_turso_connection()
-        yield wrapper
+        wrapper, raw_conn = await _get_turso_connection()
+        try:
+            yield wrapper
+        finally:
+            await wrapper.close()
     else:
         async with aiosqlite.connect(DB_PATH) as conn:
             # Wrap the local connection to track metrics
