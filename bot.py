@@ -1223,7 +1223,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v5.1.6"
+BOT_VERSION = "v5.1.7"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -3254,15 +3254,15 @@ async def on_ready():
             print(f"[DnD] Webhook pre-warm failed: {_e}")
         print(f"✅ {bot.user} is online! ({BOT_VERSION})")
         # Auto-join the 24/7 VC on startup
-        for _guild in bot.guilds:
-            _channel = bot.get_channel(VC_CHANNEL_ID)
-            if _channel and isinstance(_channel, discord.VoiceChannel):
-                try:
-                    if _guild.voice_client is None:
-                        await asyncio.wait_for(_channel.connect(), timeout=15)
-                        print(f"[VC] Auto-joined {_channel.name} on startup")
-                except Exception as _e:
-                    print(f"[VC] Auto-join on startup failed: {_e}")
+        # for _guild in bot.guilds:
+        #     _channel = bot.get_channel(VC_CHANNEL_ID)
+        #     if _channel and isinstance(_channel, discord.VoiceChannel):
+        #         try:
+        #             if _guild.voice_client is None:
+        #                 await asyncio.wait_for(_channel.connect(), timeout=15)
+        #                 print(f"[VC] Auto-joined {_channel.name} on startup")
+        #         except Exception as _e:
+        #             print(f"[VC] Auto-join on startup failed: {_e}")
 
 
 @bot.event
