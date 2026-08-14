@@ -879,6 +879,12 @@ async def vc_watchdog():
             print(f"[VC Watchdog] Failed to rejoin VC in {guild.name}: {_e}")
 
 
+@vc_watchdog.before_loop
+async def before_vc_watchdog():
+    await bot.wait_until_ready()
+    await asyncio.sleep(10)  # Let channel cache settle after ready
+
+
 @tasks.loop(seconds=60)
 async def schedule_loop():
     """Main schedule loop — checks daily questions and chatter every minute."""
@@ -1223,7 +1229,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v5.1.8"
+BOT_VERSION = "v5.1.9"
 
 VC_CHANNEL_ID = 1446064348073168922
 
