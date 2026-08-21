@@ -860,29 +860,29 @@ async def do_activity_rewards(guild_id: str):
 # ======================== SCHEDULED TASKS ========================
 
 
-@tasks.loop(minutes=2)
-async def vc_watchdog():
-    """Silently rejoin the 24/7 VC if the bot has been disconnected."""
-    for guild in bot.guilds:
-        vc = guild.voice_client
-        if vc is not None and vc.is_connected():
-            continue  # Already connected, nothing to do
-        channel = bot.get_channel(VC_CHANNEL_ID)
-        if channel is None or not isinstance(channel, discord.VoiceChannel):
-            continue
-        try:
-            if vc is not None:
-                await vc.disconnect(force=True)
-            await asyncio.wait_for(channel.connect(), timeout=15)
-            print(f"[VC Watchdog] Rejoined {channel.name} in {guild.name}")
-        except Exception as _e:
-            print(f"[VC Watchdog] Failed to rejoin VC in {guild.name}: {_e}")
+# @tasks.loop(minutes=2)
+# async def vc_watchdog():
+#     """Silently rejoin the 24/7 VC if the bot has been disconnected."""
+#     for guild in bot.guilds:
+#         vc = guild.voice_client
+#         if vc is not None and vc.is_connected():
+#             continue  # Already connected, nothing to do
+#         channel = bot.get_channel(VC_CHANNEL_ID)
+#         if channel is None or not isinstance(channel, discord.VoiceChannel):
+#             continue
+#         try:
+#             if vc is not None:
+#                 await vc.disconnect(force=True)
+#             await asyncio.wait_for(channel.connect(), timeout=15)
+#             print(f"[VC Watchdog] Rejoined {channel.name} in {guild.name}")
+#         except Exception as _e:
+#             print(f"[VC Watchdog] Failed to rejoin VC in {guild.name}: {_e}")
 
 
-@vc_watchdog.before_loop
-async def before_vc_watchdog():
-    await bot.wait_until_ready()
-    await asyncio.sleep(10)  # Let channel cache settle after ready
+# @vc_watchdog.before_loop
+# async def before_vc_watchdog():
+#     await bot.wait_until_ready()
+#     await asyncio.sleep(10)  # Let channel cache settle after ready
 
 
 @tasks.loop(seconds=60)
@@ -1229,7 +1229,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v5.1.9"
+BOT_VERSION = "v5.2.0"
 
 VC_CHANNEL_ID = 1446064348073168922
 
@@ -3228,7 +3228,7 @@ async def on_ready():
         bot.add_view(NewQuestionView("casual"))
         bot.add_view(NewQuestionView("typology"))
         schedule_loop.start()
-        vc_watchdog.start()
+        # vc_watchdog.start()
         bot.loop.create_task(chip_drop_cycle())
         # Guild-only sync — instant visibility, no 1-hour global propagation delay.
         # Global bot.tree.sync() is intentionally omitted: it creates a pending global
@@ -3260,15 +3260,15 @@ async def on_ready():
             print(f"[DnD] Webhook pre-warm failed: {_e}")
         print(f"✅ {bot.user} is online! ({BOT_VERSION})")
         # Auto-join the 24/7 VC on startup
-        for _guild in bot.guilds:
-            _channel = bot.get_channel(VC_CHANNEL_ID)
-            if _channel and isinstance(_channel, discord.VoiceChannel):
-                try:
-                    if _guild.voice_client is None:
-                        await asyncio.wait_for(_channel.connect(), timeout=15)
-                        print(f"[VC] Auto-joined {_channel.name} on startup")
-                except Exception as _e:
-                    print(f"[VC] Auto-join on startup failed: {_e}")
+        # for _guild in bot.guilds:
+        #     _channel = bot.get_channel(VC_CHANNEL_ID)
+        #     if _channel and isinstance(_channel, discord.VoiceChannel):
+        #         try:
+        #             if _guild.voice_client is None:
+        #                 await asyncio.wait_for(_channel.connect(), timeout=15)
+        #                 print(f"[VC] Auto-joined {_channel.name} on startup")
+        #         except Exception as _e:
+        #             print(f"[VC] Auto-join on startup failed: {_e}")
 
 
 @bot.event
