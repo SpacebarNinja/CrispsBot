@@ -1231,7 +1231,7 @@ async def auto_start_word_game(gid: str) -> bool:
 
 # ---------- Public ----------
 
-BOT_VERSION = "v5.2.1"
+BOT_VERSION = "v5.2.2"
 
 VC_CHANNEL_ID = 1446064348073168922
 VC_AUTOJOIN_ENABLED = True  # Toggle with /autojoin

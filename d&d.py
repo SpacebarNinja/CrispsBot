@@ -27,7 +27,7 @@ DM_USER_ID = "779245588596129812"
 # DM borrows this character's stats when using /roll (debug purposes)
 DM_ROLL_AS = "aeran"
 
-# Proficiency bonus - level 1
+# Proficiency bonus - levels 1–4
 PROF_BONUS = 2
 
 # Path to character profile pictures
@@ -38,7 +38,7 @@ PFP_DIR = Path(__file__).parent / "D&D PFPs"
 PLAYER_CHARS: dict[str, str] = {
     "779245588596129812":  "aeran",   # DM (Space) → Aeran for debug rolls
     "1226954275587100834": "viola",   # VOICE
-    "1368849513980104745": "isaiah",  # ALFRED
+    # "1368849513980104745": "isaiah",  # ALFRED (left campaign)
     "837999559547420702":  "bablino", # RYLEY
     "1389163922451333160": "aeran",   # BIRB
     "921246592269430885":  "faye",    # ELLA
@@ -54,7 +54,7 @@ CHARACTERS: dict[str, dict] = {
         "race":        "Tiefling (Glasya)",
         "cls":         "Wizard",
         "pfp":         "PFP_Viola.png",
-        "hp":          8,
+        "hp":          26,
         "hit_die":     6,
         "str": 5,  "dex": 15, "con": 15,
         "int": 18, "wis": 11, "cha": 14,
@@ -71,32 +71,32 @@ CHARACTERS: dict[str, dict] = {
             {"name": "Quarterstaff", "emoji": "🦯", "stat": "str", "extra":  1, "desc": "Melee, 1d6-3",          "dmg": (1,  6,-3)},
         ],
     },
-    "isaiah": {
-        "name":        "Isaiah Sylvester",
-        "race":        "Dhampir",
-        "cls":         "Eldritch Knight",
-        "pfp":         "PFP_Isaiah.png",
-        "hp":          12,
-        "hit_die":     10,
-        "str": 14, "dex": 11, "con": 15,
-        "int": 13, "wis": 12, "cha": 12,
-        "save_profs":  {"str", "con"},
-        "skill_profs": {"athletics", "perception"},
-        "features":    [],
-        "attack_stat": "str",
-        "speed":       30,
-        "weapons": [
-            {"name": "Longsword",      "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8+2",   "dmg": (1, 8, 2)},
-            {"name": "Light Crossbow", "emoji": "🎯", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8",     "dmg": (1, 8, 0)},
-            {"name": "Vampiric Bite",  "emoji": "🧛", "stat": "str", "extra": 0, "desc": "1d4+2 damage + heal 2", "dmg": (1, 4, 2)},
-        ],
-    },
+    # "isaiah": {  # Left campaign
+    #     "name":        "Isaiah Sylvester",
+    #     "race":        "Dhampir",
+    #     "cls":         "Eldritch Knight",
+    #     "pfp":         "PFP_Isaiah.png",
+    #     "hp":          12,
+    #     "hit_die":     10,
+    #     "str": 14, "dex": 11, "con": 15,
+    #     "int": 13, "wis": 12, "cha": 12,
+    #     "save_profs":  {"str", "con"},
+    #     "skill_profs": {"athletics", "perception"},
+    #     "features":    [],
+    #     "attack_stat": "str",
+    #     "speed":       30,
+    #     "weapons": [
+    #         {"name": "Longsword",      "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8+2",   "dmg": (1, 8, 2)},
+    #         {"name": "Light Crossbow", "emoji": "🎯", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8",     "dmg": (1, 8, 0)},
+    #         {"name": "Vampiric Bite",  "emoji": "🧛", "stat": "str", "extra": 0, "desc": "1d4+2 damage + heal 2", "dmg": (1, 4, 2)},
+    #     ],
+    # },
     "aeran": {
         "name":        "Aeran Wrenkhyre",
         "race":        "Aarakocra",
         "cls":         "Ranger",
         "pfp":         "PFP_Aeran.png",
-        "hp":          10,
+        "hp":          28,
         "hit_die":     10,
         "str": 12, "dex": 18, "con": 10,
         "int": 14, "wis": 15, "cha": 13,
@@ -118,7 +118,7 @@ CHARACTERS: dict[str, dict] = {
         "race":        "Goblin",
         "cls":         "Barbarian",
         "pfp":         "PFP_Bablino.png",
-        "hp":          14,
+        "hp":          41,
         "hit_die":     12,
         "str": 15, "dex": 13, "con": 14,
         "int": 4,  "wis": 12, "cha": 11,
@@ -139,7 +139,7 @@ CHARACTERS: dict[str, dict] = {
         "race":        "Wood Elf",
         "cls":         "Druid",
         "pfp":         "PFP_Faye.png",
-        "hp":          10,
+        "hp":          31,
         "hit_die":     8,
         "str": 12, "dex": 16, "con": 15,
         "int": 13, "wis": 18, "cha": 8,
@@ -161,9 +161,9 @@ CHARACTERS: dict[str, dict] = {
         "race":        "Kalashtar",
         "cls":         "Paladin",
         "pfp":         "PFP_Steria.png",
-        "hp":          11,
+        "hp":          32,
         "hit_die":     10,
-        "str": 15, "dex": 12, "con": 13,
+        "str": 16, "dex": 13, "con": 13,
         "int": 13, "wis": 16, "cha": 16,
         "save_profs":  {"wis", "cha"},
         "skill_profs": {"insight", "persuasion"},
