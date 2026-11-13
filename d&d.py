@@ -27,8 +27,8 @@ DM_USER_ID = "779245588596129812"
 # DM borrows this character's stats when using /roll (debug purposes)
 DM_ROLL_AS = "aeran"
 
-# Proficiency bonus - levels 1–4
-PROF_BONUS = 2
+# Proficiency bonus - levels 5–8
+PROF_BONUS = 3
 
 # Path to character profile pictures
 PFP_DIR = Path(__file__).parent / "D&D PFPs"
@@ -54,7 +54,7 @@ CHARACTERS: dict[str, dict] = {
         "race":        "Tiefling (Glasya)",
         "cls":         "Wizard",
         "pfp":         "PFP_Viola.png",
-        "hp":          26,
+        "hp":          32,
         "hit_die":     6,
         "str": 7,  "dex": 15, "con": 15,
         "int": 18, "wis": 11, "cha": 14,
@@ -64,11 +64,11 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "int",
         "speed":       30,
         "weapons": [
-            {"name": "Fire Bolt",    "emoji": "🔥", "stat": "int", "extra": -1, "desc": "Ranged spell, 1d10",   "dmg": (1, 10, 0), "kind": "cantrip"},
+            {"name": "Fire Bolt",    "emoji": "🔥", "stat": "int", "extra":  0, "desc": "Ranged spell, 2d10 fire", "dmg": (2, 10, 0), "kind": "cantrip"},
             {"name": "Sleep",        "emoji": "💤", "stat": "int", "extra":  0, "desc": "1st Level, 5d8 HP effect", "dmg": (5, 8, 0), "kind": "spell", "type": "hp_affected", "has_atk": False},
             {"name": "Cloud of Daggers", "emoji": "🌀", "stat": "int", "extra": 0, "desc": "2nd Level, 4d4 slashing per turn in area", "dmg": (4, 4, 0), "kind": "spell", "type": "damage", "has_atk": False},
             {"name": "Dagger",       "emoji": "🗡️",  "stat": "dex", "extra":  0, "desc": "Melee/Ranged, 1d4+2",  "dmg": (1,  4, 2)},
-            {"name": "Quarterstaff", "emoji": "🦯", "stat": "str", "extra":  1, "desc": "Melee, 1d6-3",          "dmg": (1,  6,-3)},
+            {"name": "Quarterstaff", "emoji": "🦯", "stat": "str", "extra":  0, "desc": "Melee, 1d6-2",          "dmg": (1,  6,-2)},
         ],
     },
     # "isaiah": {  # Left campaign
@@ -96,7 +96,7 @@ CHARACTERS: dict[str, dict] = {
         "race":        "Aarakocra",
         "cls":         "Ranger",
         "pfp":         "PFP_Aeran.png",
-        "hp":          32,
+        "hp":          39,
         "hit_die":     10,
         "str": 12, "dex": 18, "con": 12,
         "int": 14, "wis": 15, "cha": 13,
@@ -106,11 +106,12 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "dex",
         "speed":       30,
         "weapons": [
-            {"name": "Longbow",       "emoji": "🏹", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8+4",                      "dmg": (1, 8, 4)},
+            {"name": "Longbow",       "emoji": "🏹", "stat": "dex", "extra": 2, "desc": "Ranged, 1d8+4 (Archery +2 incl.)",   "dmg": (1, 8, 4)},
             {"name": "Shortsword",    "emoji": "🗡️",  "stat": "dex", "extra": 0, "desc": "Melee, 1d6+4",                       "dmg": (1, 6, 4)},
             {"name": "Talons",        "emoji": "🦅", "stat": "dex", "extra": 0, "desc": "Natural, 1d6+4",                     "dmg": (1, 6, 4)},
             {"name": "Hunter's Mark", "emoji": "🎯", "stat": "wis", "extra": 0, "desc": "1st Level Conc., +1d6 per hit",          "dmg": (1, 6, 0), "kind": "spell", "type": "damage", "has_atk": False},
             {"name": "Cure Wounds",   "emoji": "💚", "stat": "wis", "extra": 0, "desc": "1st Level, 1d8+2 HP healing",            "dmg": (1, 8, 2), "kind": "spell", "type": "heal",   "has_atk": False},
+            {"name": "Hail of Thorns", "emoji": "🌵", "stat": "wis", "extra": 0, "desc": "1st Level, +1d10 to target & 5 ft (DEX half)", "dmg": (1, 10, 0), "kind": "spell", "type": "damage", "has_atk": False},
         ],
     },
     "bablino": {
@@ -118,7 +119,7 @@ CHARACTERS: dict[str, dict] = {
         "race":        "Goblin",
         "cls":         "Barbarian",
         "pfp":         "PFP_Bablino.png",
-        "hp":          41,
+        "hp":          50,
         "hit_die":     12,
         "str": 16, "dex": 14, "con": 14,
         "int": 4,  "wis": 12, "cha": 11,
@@ -126,12 +127,12 @@ CHARACTERS: dict[str, dict] = {
         "skill_profs": {"athletics", "intimidation", "stealth"},
         "features":    ["rage", "reckless_attack", "danger_sense"],
         "attack_stat": "str",
-        "speed":       30,
+        "speed":       40,
         "weapons": [
-            {"name": "Greataxe",     "emoji": "🪓", "stat": "str", "extra": 0, "desc": "Melee, 1d12+2",          "dmg": (1, 12, 2)},
-            {"name": "Handaxe",     "emoji": "🔪", "stat": "str", "extra": 0, "desc": "Melee, 1d6+2",            "dmg": (1,  6, 2)},
-            {"name": "Javelin",     "emoji": "🔱", "stat": "str", "extra": 0, "desc": "Thrown, 1d6+2",           "dmg": (1,  6, 2)},
-            {"name": "Light Crossbow", "emoji": "🎯", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8+1 — 10 bolts", "dmg": (1,  8, 1)},
+            {"name": "Greataxe",     "emoji": "🪓", "stat": "str", "extra": 0, "desc": "Melee, 1d12+3",          "dmg": (1, 12, 3)},
+            {"name": "Handaxe",     "emoji": "🔪", "stat": "str", "extra": 0, "desc": "Melee, 1d6+3",            "dmg": (1,  6, 3)},
+            {"name": "Javelin",     "emoji": "🔱", "stat": "str", "extra": 0, "desc": "Thrown, 1d6+3",           "dmg": (1,  6, 3)},
+            {"name": "Light Crossbow", "emoji": "🎯", "stat": "dex", "extra": 0, "desc": "Ranged, 1d8+2 — 10 bolts", "dmg": (1,  8, 2)},
         ],
     },
     "faye": {
@@ -161,7 +162,7 @@ CHARACTERS: dict[str, dict] = {
         "race":        "Kalashtar",
         "cls":         "Paladin",
         "pfp":         "PFP_Steria.png",
-        "hp":          32,
+        "hp":          39,
         "hit_die":     10,
         "str": 16, "dex": 13, "con": 13,
         "int": 13, "wis": 16, "cha": 16,
@@ -171,12 +172,15 @@ CHARACTERS: dict[str, dict] = {
         "attack_stat": "str",
         "speed":       30,
         "weapons": [
-            {"name": "Longsword",     "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8+2",                       "dmg": (1, 8, 2)},
-            {"name": "Javelin",     "emoji": "🔱", "stat": "str", "extra": 0, "desc": "Thrown, 1d6+2",                      "dmg": (1, 6, 2)},
+            {"name": "Longsword",     "emoji": "⚔️",  "stat": "str", "extra": 0, "desc": "Melee, 1d8+3",                       "dmg": (1, 8, 3)},
+            {"name": "Javelin",     "emoji": "🔱", "stat": "str", "extra": 0, "desc": "Thrown, 1d6+3",                      "dmg": (1, 6, 3)},
             {"name": "Divine Smite",   "emoji": "✨", "stat": "cha", "extra": 0, "desc": "1st Level Slot, 2d8 radiant on hit",  "dmg": (2, 8, 0), "kind": "spell", "type": "damage", "has_atk": False},
+            {"name": "Divine Smite (2nd)", "emoji": "💫", "stat": "cha", "extra": 0, "desc": "2nd Level Slot, 3d8 radiant on hit", "dmg": (3, 8, 0), "kind": "spell", "type": "damage", "has_atk": False},
             {"name": "Divine Favor",   "emoji": "🌟", "stat": "cha", "extra": 0, "desc": "Concentration, +1d4 radiant per hit", "dmg": (1, 4, 0), "kind": "spell", "type": "damage", "has_atk": False},
             {"name": "Wrathful Smite", "emoji": "😤", "stat": "cha", "extra": 0, "desc": "Concentration, +1d6 psychic on hit",  "dmg": (1, 6, 0), "kind": "spell", "type": "damage", "has_atk": False},
             {"name": "Searing Smite",  "emoji": "🔥", "stat": "cha", "extra": 0, "desc": "Concentration, +1d6 fire on hit",     "dmg": (1, 6, 0), "kind": "spell", "type": "damage", "has_atk": False},
+            {"name": "Moonbeam",       "emoji": "🌙", "stat": "cha", "extra": 0, "desc": "2nd Level Conc., 2d10 radiant (CON half)", "dmg": (2, 10, 0), "kind": "spell", "type": "damage", "has_atk": False},
+            {"name": "Prayer of Healing", "emoji": "🙏", "stat": "cha", "extra": 0, "desc": "2nd Level, 2d8+3 healing (up to 6)", "dmg": (2, 8, 3), "kind": "spell", "type": "heal", "has_atk": False},
         ],
     },
 }
@@ -262,8 +266,7 @@ FEATURE_DEFS: dict[str, dict] = {
     },
     "archery_style": {
         "label":        "🏹 Archery Style",
-        "desc":         "+2 to ranged attack rolls",
-        "attack_bonus": 2,
+        "desc":         "+2 to ranged attack rolls (baked into Longbow)",
     },
 }
 
